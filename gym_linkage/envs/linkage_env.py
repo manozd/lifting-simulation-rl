@@ -1,24 +1,8 @@
-import sympy
+import gym
 from gym import spaces
-from sympy import symbols
-from sympy.physics.mechanics import *
 import numpy as np
+from sympy import Dummy, lambdify
 from scipy.integrate import odeint
-
-LINK_1_LEN = 0.4
-LINK_1_M = 1
-
-LINK_2_LEN = 0.4
-LINK_2_M = 1
-
-LINK_3_LEN = 0.6
-LINK_3_M = 1
-
-LINK_4_LEN = 0.4
-LINK_4_M = 1
-
-LINK_5_LEN = 0.4
-LINK_5_M = 1
 
 
 class ActionSpace:
@@ -29,55 +13,35 @@ class ActionSpace:
 class LinkageEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
 
-    def __init__(self):
-        low = np.array(
-            [
-                0.0,
-                np.pi / 2,
-                -np.pi / 4,
-                -np.pi / 2,
-                -np.pi / 2,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-            ],
-            dtype=np.float32,
-        )
-        high = np.array(
-            [np.pi / 2, 3 * np.pi / 2, np.pi / 2, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-            dtype=np.float32,
-        )
+    def __init__(self, M=None, F=None, params=None, param_vals=None):
+        self.param_vals = np.column_stack(
+            (param_vals.links.lengths, param_vals.links.masses)
+        ).reshape(-1)
+        np.insert(self.param_vals, 0, param_vals.g)
+
+        dummy_symbols = [Dummy() for i in range(15)]
+        self.M = lambdify(dummy_symbols + params, M)
+        self.F = lambdify(dummy_symbols + params, F)
+        self.init_state = param_vals.init
+
+        low = np.array(param_vals.obs_limits.low) * np.pi
+        high = np.array(param_vals.obs_limits.high) * np.pi
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
-        low = np.full(10, -1.0, dtype=np.float32)
-        high = -low
+        low = np.array(param_vals.act_limits.low)
+        high = np.array(param_vals.act_limits.high)
         self.action_space = spaces.Box(low=low, high=high, dtype=np.float32)
         self.state = None
 
     def reset(self):
-        self.state = np.array(
-            [
-                0.0,
-                np.pi / 2,
-                -np.pi / 4,
-                -np.pi / 2,
-                -np.pi / 2,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-            ],
-            dtype=np.float32,
-        )
+        self.state = np.array(self.init * np.pi, dtype=np.float32)
 
-    def step(self):
+    def step(self, u):
+        t = linspace(0, 0.5, 15)
         state0 = self.state
-        self.state = odeint(rhs, state0, 1, args=(parameter_vals,))
+        self.state = odeint(self._rhs, state0, t, args=(self.parameter_vals,))
         terminate = self._terminate()
-        rewrad = 1
+        reward = 1
         return (self.state, reward, terminate, {})
 
     def _terminate(self):
@@ -87,7 +51,6 @@ class LinkageEnv(gym.Env):
         pass
 
     def _rhs(x, t, args):
-        u = [0, 0, 0, 0, 0]
         arguments = np.hstack((x, u, args))
-        dx = np.array(np.linalg.solve(M_func(*arguments), F_func(*arguments))).T[0]
+        dx = np.array(np.linalg.solve(self.M(*arguments), self.F(*arguments))).T[0]
         return dx
