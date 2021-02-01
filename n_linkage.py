@@ -41,8 +41,8 @@ def kane(n=5, mode="particle"):
 
     km = KanesMethod(N, q_ind=q, u_ind=u, kd_eqs=kindiffs)
     fr, frstar = km.kanes_equations(phys_objs, loads=loads)
-    fr.simplify()
-    frstar.simplify()
+    # fr.simplify()
+    # frstar.simplify()
 
     dynamic = q + u + f
     dummy_symbols = [Dummy() for i in dynamic]
@@ -51,6 +51,6 @@ def kane(n=5, mode="particle"):
     params = [g]
     for i in range(n):
         params += [l[i], m[i]]
-    M = km.mass_matrix_full.subs(kindiff_dict).subs(dummy_dict).simplify()
-    F = km.forcing_full.subs(kindiff_dict).subs(dummy_dict).simplify()
+    M = km.mass_matrix_full.subs(kindiff_dict).subs(dummy_dict)
+    F = km.forcing_full.subs(kindiff_dict).subs(dummy_dict)
     return M, F, params
