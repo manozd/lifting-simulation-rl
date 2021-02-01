@@ -3,43 +3,49 @@ from gym import spaces
 import numpy as np
 from sympy import Dummy, lambdify
 from scipy.integrate import odeint
+from n_linkage import kane
 
+N_LINKS = 5
 
-class ActionSpace:
-    def __init__(self):
-        pass
+PARAM_VALS = [9.81, 0.4, 1, 0.4, 1, 0.6, 1, 0.4, 1, 0.4, 1]
+
+INIT_STATE = [np.pi / 2, np.pi / 2, np.pi / 2, -np.pi / 2, -np.pi / 2]
+
+OBS_LOW = [0, np.pi / 2, -np.pi / 4, -np.pi / 2, -np.pi / 2]
+OBS_HIGH = [np.pi / 2, 3 * np.pi / 2, np.pi / 2, np.pi / 2, np.pi / 2]
+
+ACT_LOW = -1
+ACT_HIGH = 1
 
 
 class LinkageEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
 
-    def __init__(self, M=None, F=None, params=None, param_vals=None):
-        self.param_vals = np.column_stack(
-            (param_vals.links.lengths, param_vals.links.masses)
-        ).reshape(-1)
-        np.insert(self.param_vals, 0, param_vals.g)
+    def __init__(self):
+        M, F, params = kane(n=N_LINKS)
 
-        dummy_symbols = [Dummy() for i in range(15)]
+        # q, u, and f so 3*N_LINKS symbols
+        dummy_symbols = [Dummy() for i in range(3 * N_LINKS)]
         self.M = lambdify(dummy_symbols + params, M)
         self.F = lambdify(dummy_symbols + params, F)
-        self.init_state = param_vals.init
 
-        low = np.array(param_vals.obs_limits.low) * np.pi
-        high = np.array(param_vals.obs_limits.high) * np.pi
+        low = np.array(OBS_LOW, dtype=np.float32)
+        high = np.array(OBS_HIGH, dtype=np.float32)
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
-        low = np.array(param_vals.act_limits.low)
-        high = np.array(param_vals.act_limits.high)
-        self.action_space = spaces.Box(low=low, high=high, dtype=np.float32)
-        self.state = None
+        self.action_space = spaces.Box(
+            low=ACT_LOW, high=ACT_HIGH, shape=(N_LINKS,), dtype=np.float32
+        )
+        self.reset()
 
     def reset(self):
-        self.state = np.array(self.init * np.pi, dtype=np.float32)
+        self.state = np.array(INIT_STATE, dtype=np.float32)
+        return self.state
 
     def step(self, u):
-        t = linspace(0, 0.5, 15)
+        t = np.linspace(0, 0.5, 15)
         state0 = self.state
-        self.state = odeint(self._rhs, state0, t, args=(self.parameter_vals,))
+        self.state = odeint(self._rhs, state0, t, args=(PARAM_VALS,))
         terminate = self._terminate()
         reward = 1
         return (self.state, reward, terminate, {})

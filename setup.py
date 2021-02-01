@@ -7,8 +7,8 @@ setup(
         "gym",
         "sympy",
         "scipy",
-        "tensorflow==2.2.0",
-        "keras==2.3.1",
-        "hydra-core",
+        "keras-rl",
+        "keras==2.2.4",
+        "tensorflow==1.13.1",
     ],
 )
