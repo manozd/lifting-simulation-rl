@@ -15,19 +15,19 @@ def kane(n=5, mode="particle"):
     frames = [N]
     points = []
     phys_objs = []
-    loads = None
+    loads = []
     kindiffs = []
-    for i in range(5):
+    for i in range(n):
         RFi = N.orientnew("RF" + str(i), "Axis", [q[i], N.z])
         RFi.set_ang_vel(N, sum(u[: i + 1]) * N.z)
-        frames.append(RFi)
+
         if not points:
             Pi = Point("P" + str(i))
             Pi.set_vel(N, 0)
         else:
-            Pi = points[-1].locatenew("P" + str(i), l[i] * frames[-1].x)
+            Pi = points[-1].locatenew("P" + str(i), l[i - 1] * frames[-1].x)
         points.append(Pi)
-
+        frames.append(RFi)
         Pcmi = Pi.locatenew("Pcm" + str(i), l[i] / 2 * RFi.x)
         Pcmi.v2pt_theory(Pi, N, RFi)
         if mode == "particle":
@@ -37,13 +37,15 @@ def kane(n=5, mode="particle"):
             Ii = inertia(RFi, m[i] * l[i] * l[i] / 3)
             obj = RigidBody("RB" + str(i), Pcmi, RFi, m[i], (Ii, Pi))
         phys_objs.append(obj)
+        loads.append((Pcmi, -m[i] * g * N.y))
         kindiffs.append(q[i].diff(t) - u[i])
 
+    print(frames[5].ang_vel_in(N))
     km = KanesMethod(N, q_ind=q, u_ind=u, kd_eqs=kindiffs)
     fr, frstar = km.kanes_equations(phys_objs, loads=loads)
     # fr.simplify()
     # frstar.simplify()
-
+    # print(frstar)
     dynamic = q + u + f
     dummy_symbols = [Dummy() for i in dynamic]
     dummy_dict = dict(zip(dynamic, dummy_symbols))
@@ -53,4 +55,5 @@ def kane(n=5, mode="particle"):
         params += [l[i], m[i]]
     M = km.mass_matrix_full.subs(kindiff_dict).subs(dummy_dict)
     F = km.forcing_full.subs(kindiff_dict).subs(dummy_dict)
-    return M, F, params
+    print(F)
+    return M, F, params + dummy_symbols
