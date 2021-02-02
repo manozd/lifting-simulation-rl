@@ -3,7 +3,7 @@ from sympy.physics.mechanics import *
 from sympy import Dummy, lambdify
 
 
-def kane(n=5, mode="particle"):
+def kane(n=5, mode="rigid_body"):
     q = dynamicsymbols("q:" + str(n))
     u = dynamicsymbols("u:" + str(n))
     f = dynamicsymbols("f:" + str(n))
@@ -34,18 +34,20 @@ def kane(n=5, mode="particle"):
             obj = Particle("Pa" + str(i), Pcmi, m[i])
 
         if mode == "rigid_body":
-            Ii = inertia(RFi, m[i] * l[i] * l[i] / 3)
+            Ii = inertia(
+                RFi,
+                m[i] * l[i] * l[i] / 3,
+                m[i] * l[i] * l[i] / 3,
+                m[i] * l[i] * l[i] / 3,
+            )
             obj = RigidBody("RB" + str(i), Pcmi, RFi, m[i], (Ii, Pi))
         phys_objs.append(obj)
         loads.append((Pcmi, -m[i] * g * N.y))
+        loads.append((RFi, 0.5 * f[i] * l[i] * RFi.z))
         kindiffs.append(q[i].diff(t) - u[i])
 
-    print(frames[5].ang_vel_in(N))
     km = KanesMethod(N, q_ind=q, u_ind=u, kd_eqs=kindiffs)
     fr, frstar = km.kanes_equations(phys_objs, loads=loads)
-    # fr.simplify()
-    # frstar.simplify()
-    # print(frstar)
     dynamic = q + u + f
     dummy_symbols = [Dummy() for i in dynamic]
     dummy_dict = dict(zip(dynamic, dummy_symbols))
@@ -55,5 +57,4 @@ def kane(n=5, mode="particle"):
         params += [l[i], m[i]]
     M = km.mass_matrix_full.subs(kindiff_dict).subs(dummy_dict)
     F = km.forcing_full.subs(kindiff_dict).subs(dummy_dict)
-    print(F)
-    return M, F, params + dummy_symbols
+    return M, F, dummy_symbols + params
