@@ -3,7 +3,7 @@ from sympy.physics.mechanics import *
 from sympy import Dummy, lambdify
 
 
-def kane(n=5, mode="rigid_body"):
+def kane(n=5, mode="rigid_body", hands_load=False):
     q = dynamicsymbols("q:" + str(n))
     u = dynamicsymbols("u:" + str(n))
     f = dynamicsymbols("f:" + str(n))
