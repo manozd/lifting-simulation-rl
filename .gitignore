@@ -128,5 +128,5 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# hydra outputs
-*outputs/
+# Checkpoints
+*.h5f
