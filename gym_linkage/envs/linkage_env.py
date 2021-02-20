@@ -186,14 +186,15 @@ class LinkageEnv(gym.Env):
         state0 = self.state[:2]
         self.state = odeint(self._rhs, state0, T, args=(PARAM_VALS,))[-1]
         reward = -sum(np.power(self.state - GOAL_POS[2:], 2)) + self.t_step / 500
-        print(self.state)
-        print(self.u)
-        terminate = self._terminate()
+        print(self.state, GOAL_POS )
+        terminate = self._terminate(state0)
+        if terminate:
+            print("-----------")
         state = np.hstack([state0, self.state])
         return (state, reward, terminate, {})
 
-    def _terminate(self):
-        return not self.observation_space.contains(self.state)
+    def _terminate(self, prev_state):
+        return not self.observation_space.contains(np.hstack([prev_state, self.state]))
 
     def render(self, mode="human"):
         pass

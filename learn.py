@@ -62,7 +62,7 @@ agent = DDPGAgent(
     gamma=0.99,
     target_model_update=0.0001,
 )
-agent.compile(Adam(lr=0.01), metrics=["mse"])
+agent.compile(Adam(lr=0.01), metrics=["mae"])
 
 # # Okay, now it's time to learn something! We visualize the training here for show, but this
 # # slows down training quite a lot. You can always safely abort the training prematurely using
