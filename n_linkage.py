@@ -25,11 +25,17 @@ def kane(n=5, mode="rigid_body", hands_load=False):
             Pi = Point("P" + str(i))
             Pi.set_vel(N, 0)
         else:
-            Pi = points[-1].locatenew("P" + str(i), l[i - 1] * frames[-1].x)
+            Pi = points[-1].locatenew("P" + str(i), l[i - 1] * RFi.x)
         points.append(Pi)
+        # Add head
+        if i == 2:
+            P_h = points[-1].locatenew("P_h", 1.3 * l[i] * RFi.x)
+            loads.append((P_h, -g * N.y))
+
         frames.append(RFi)
         Pcmi = Pi.locatenew("Pcm" + str(i), l[i] / 2 * RFi.x)
         Pcmi.v2pt_theory(Pi, N, RFi)
+
         if mode == "particle":
             obj = Particle("Pa" + str(i), Pcmi, m[i])
 
@@ -41,13 +47,20 @@ def kane(n=5, mode="rigid_body", hands_load=False):
                 m[i] * l[i] * l[i] / 3,
             )
             obj = RigidBody("RB" + str(i), Pcmi, RFi, m[i], (Ii, Pi))
+
         phys_objs.append(obj)
         loads.append((Pcmi, -m[i] * g * N.y))
         loads.append((RFi, 0.5 * f[i] * l[i] * RFi.z))
         kindiffs.append(q[i].diff(t) - u[i])
 
+    if hands_load:
+        P5 = points[-1].locatenew("P5", l[-1] * frames[-1].x)
+        loads.append((P5, -5 * g * N.y))
+
     km = KanesMethod(N, q_ind=q, u_ind=u, kd_eqs=kindiffs)
     fr, frstar = km.kanes_equations(phys_objs, loads=loads)
+    # fr.simplify()
+    # frstar.simplify()
     dynamic = q + u + f
     dummy_symbols = [Dummy() for i in dynamic]
     dummy_dict = dict(zip(dynamic, dummy_symbols))
@@ -57,4 +70,6 @@ def kane(n=5, mode="rigid_body", hands_load=False):
         params += [l[i], m[i]]
     M = km.mass_matrix_full.subs(kindiff_dict).subs(dummy_dict)
     F = km.forcing_full.subs(kindiff_dict).subs(dummy_dict)
+    # M.simplify()
+    # F.simplify()
     return M, F, dummy_symbols + params
