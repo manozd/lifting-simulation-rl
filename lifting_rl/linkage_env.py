@@ -18,11 +18,19 @@ def get_coordinates(path):
     return np.array(coordinates)
 
 
-def get_interpolated(coords, timestamps):
+def get_interpolated(coords, timestamps, mode="spline"):
     interpolated_coords = []
     for i in range(coords.shape[1]):
-        y = coords[:, i]
-        f = interpolate.interp1d(timestamps, y)
+        if mode == "default":
+            y = coords[:, i]
+            f = interpolate.interp1d(timestamps, y)
+        if mode == "spline":
+            y = coords[:, i]
+
+            def f(x):
+                tck = interpolate.splrep(timestamps, y)
+                return interpolate.splev(timestamps, tck)
+
         interpolated_coords.append(f)
     return interpolated_coords
 
@@ -87,7 +95,6 @@ class LinkageEnv(gym.Env):
                 for i in range(len(self.interpolated_trajectory))
             ]
         )
-        print(trj_state)
         if self.verbose:
             print("=" * 50 + "\n")
             print(f"START STEP AT t = {self.cur_time}")
