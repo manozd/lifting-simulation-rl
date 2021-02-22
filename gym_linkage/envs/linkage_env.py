@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from scipy.integrate import odeint
 from n_linkage import kane
 
-N_LINKS = 1
+N_LINKS = 2
 
 # GOAL_POS = np.array(
 #     [np.pi / 4, 3 * np.pi / 4, np.pi / 2, -np.pi / 4, -np.pi / 4, 0, 0, 0, 0, 0], dtype=np.float32
@@ -43,26 +43,35 @@ N_LINKS = 1
 #     5*np.pi,
 # ]
 
-GOAL_POS = np.array([np.pi / 4, 0, np.pi / 4, 0], dtype=np.float32)
+GOAL_POS = np.array([np.pi / 4, 3*np.pi/4, 0, 0, np.pi / 4, 3*np.pi / 4, 0 ,0], dtype=np.float32)
 
-PARAM_VALS = np.array([9.81, 0.4, 1], dtype=np.float32)
-INIT_STATE = np.array([np.pi / 4, 0, np.pi / 4, 0], dtype=np.float32)
+PARAM_VALS = np.array([9.81, 0.4, 1, 0.4, 1], dtype=np.float32)
+INIT_STATE = np.array([np.pi / 4, 3*np.pi/4, 0, 0, np.pi / 4, 3*np.pi / 4, 0 ,0], dtype=np.float32)
 OBS_LOW = [
     0,
+    3 * np.pi / 8,
+    -5 * np.pi,
     -5 * np.pi,
     0,
+    3 * np.pi / 8,
+    -5 * np.pi,
     -5 * np.pi,
 ]
+
 OBS_HIGH = [
     5 * np.pi / 8,
+    3 * np.pi / 2,
+    5 * np.pi,
     5 * np.pi,
     5 * np.pi / 8,
+    3 * np.pi / 2,
+    5 * np.pi,
     5 * np.pi,
 ]
 
 
-ACT_LOW = -10
-ACT_HIGH = 10
+ACT_LOW = -20
+ACT_HIGH = 20
 
 PATH = "/home/mans/Documents/skeleton_angles.csv"
 TIME_STEP = 0.01
@@ -169,32 +178,30 @@ class LinkageEnv(gym.Env):
             low=ACT_LOW, high=ACT_HIGH, shape=(N_LINKS,), dtype=np.float32
         )
         self.t_step = 0
-        self.previous_dif = 0
         C = Coordinates(PATH)
         self.q = C.q_expanded(TIME_STEP)
-        self.states = []
         self.reset()
 
     def reset(self):
-        self.state = np.array(INIT_STATE, dtype=np.float32)
-        self.states = []
+        self.state = np.hstack([self.q[0][:2], [0,0], self.q[0][:2], [0,0]])
         self.t_step = 0
         return self.state
 
     def step(self, u):
         self.u = np.clip(u, ACT_LOW, ACT_HIGH)
-        state0 = self.state[:2]
-        self.state = odeint(self._rhs, state0, T, args=(PARAM_VALS,))[-1]
-        reward = -sum(np.power(self.state - GOAL_POS[2:], 2)) + self.t_step / 500
-        print(self.state, GOAL_POS )
-        terminate = self._terminate(state0)
-        if terminate:
-            print("-----------")
-        state = np.hstack([state0, self.state])
-        return (state, reward, terminate, {})
+        print(self.u)
+        x0 = self.state[4:]
+        x1 = odeint(self._rhs, x0, T, args=(PARAM_VALS,))[-1]
+        self.t_step += 1
+        self.state = np.hstack([x0, x1])
+        state = np.hstack([self.state[:2], self.state[4:6]])
+        ref_state = np.hstack([self.q[self.t_step-1][:2], self.q[self.t_step][:2]])
+        reward = -sum(np.power(state - ref_state, 2)) - pow(sum(abs(u)),2)
+        terminate = self._terminate()
+        return (self.state, reward, False, {})
 
-    def _terminate(self, prev_state):
-        return not self.observation_space.contains(np.hstack([prev_state, self.state]))
+    def _terminate(self):
+        pass
 
     def render(self, mode="human"):
         pass
