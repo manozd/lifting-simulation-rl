@@ -17,14 +17,14 @@ parser.add_argument(
     "--angles",
     type=str,
     required=False,
-    default="/home/p.zaidel/Projects/lifting-simulation-rl/data/skeleton_angles.csv",
+    default="/home/mans/git/human-body-model-dynamics/data/skeleton_angles.csv",
 )
 args = parser.parse_args()
 
 angles_file = args.angles
 
 ENV_NAME = "Linkage-v0"
-DEVICE = "/device/cpu:0"
+DEVICE = None
 
 
 params = {
@@ -42,11 +42,9 @@ params = {
 }
 
 
-tf.debugging.set_log_device_placement(True)
-
 with tf.device(DEVICE):
     # Get the environment and extract the number of actions.
-    env = LinkageEnv(angles_file, params)
+    env = LinkageEnv(angles_file, params, verbose=0)
     assert len(env.action_space.shape) == 1
     nb_actions = env.action_space.shape[0]
 

@@ -31,7 +31,8 @@ class LinkageEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
 
     def __init__(self, path: str, w_params: dict, verbose: bool = False):
-        M, F, m_params = kane(n=N_LINKS)
+        self.n_links = w_params["N_LINKS"]
+        M, F, m_params = kane(n=w_params["N_LINKS"])
         self.M_func = lambdify(m_params, M)
         self.F_func = lambdify(m_params, F)
         self.observation_space = spaces.Box(
@@ -58,7 +59,7 @@ class LinkageEnv(gym.Env):
             self.trajectory_points, self.trajectory_timestamps
         )
 
-        self.time_step = w_params["TIME_STEPS"]
+        self.time_step = w_params["TIME_STEP"]
         self.param_vals = w_params["PARAM_VALS"]
 
         self.u = None
@@ -66,7 +67,7 @@ class LinkageEnv(gym.Env):
         self.reset()
 
     def reset(self):
-        init_coords = self.trajectory_points[0]
+        init_coords = self.trajectory_points[0][: self.n_links]
         init_vel = np.array([0] * init_coords.shape[0])
         init_state = np.concatenate((init_coords, init_vel))
         self.state = init_state
@@ -86,7 +87,7 @@ class LinkageEnv(gym.Env):
                 for i in range(len(self.interpolated_trajectory))
             ]
         )
-
+        print(trj_state)
         if self.verbose:
             print("=" * 50 + "\n")
             print(f"START STEP AT t = {self.cur_time}")
@@ -105,9 +106,12 @@ class LinkageEnv(gym.Env):
         is_out_of_bounds = self._is_out_of_bounds()
         is_end = next_t >= self.end_time
 
-        reward = -np.exp(sum(abs(self.state[:5] - next_coordinates)))
-        if is_out_of_bounds:
-            reward -= 1000
+        cost = sum(abs(self.state[: self.n_links])) + sum(abs(u))
+        reward = (
+            -sum(abs(self.state[: self.n_links] - next_coordinates[: self.n_links]))
+            ** 2
+            - 0.1 * cost ** 2
+        )
 
         if self.verbose:
             print(f"\t after state = {self.state}")
@@ -123,13 +127,19 @@ class LinkageEnv(gym.Env):
             print("*****" + "TERMINATE" + "*****")
             print("*" * 50)
 
-        return (self.state, reward, terminate, {})
+        return (self.state, reward, is_end, {})
 
     def _is_out_of_bounds(self):
         return not self.observation_space.contains(self.state)
 
+    def _normalize_angles(self, q_coords):
+        return [((q_coord + np.pi) % (2 * np.pi)) - np.pi for q_coord in q_coords]
+
     def render(self):
         pass
+
+    def _xy_coords(self, q):
+        lengths = [self.param_vals[i] for i in range(1, self.n_links, 2)]
 
     def _rhs(self, x, t, args):
         arguments = np.hstack((x, self.u, args))
