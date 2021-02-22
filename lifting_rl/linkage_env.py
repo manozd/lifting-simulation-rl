@@ -8,46 +8,6 @@ from scipy.integrate import odeint
 from lifting_rl.n_linkage import kane
 from scipy import interpolate
 
-N_LINKS = 5
-
-GOAL_POS = np.array(
-    [np.pi / 4, 3 * np.pi / 4, np.pi / 2, -np.pi / 4, -np.pi / 4, 0, 0, 0, 0, 0]
-)
-
-PARAM_VALS = np.array([9.81, 0.4, 1, 0.4, 1, 0.6, 1, 0.4, 1, 0.4, 1])
-INIT_STATE = [np.pi / 2, np.pi / 2, np.pi / 2, -np.pi / 2, -np.pi / 2, 0, 0, 0, 0, 0]
-OBS_LOW = [
-    0,
-    3 * np.pi / 8,
-    -np.pi / 2,
-    -5 * np.pi / 8,
-    -5 * np.pi / 8,
-    -np.pi,
-    -np.pi,
-    -np.pi,
-    -np.pi,
-    -np.pi,
-]
-OBS_HIGH = [
-    5 * np.pi / 8,
-    3 * np.pi / 2,
-    5 * np.pi / 8,
-    np.pi / 2,
-    np.pi / 2,
-    np.pi,
-    np.pi,
-    np.pi,
-    np.pi,
-    np.pi,
-]
-
-ACT_LOW = -1
-ACT_HIGH = 1
-
-PATH = "/home/mans/Documents/skeleton_angles.csv"
-TIME_STEP = 0.01
-VIDEO_FPS = 30
-
 
 def get_coordinates(path):
     coordinates = []
@@ -70,32 +30,44 @@ def get_interpolated(coords, timestamps):
 class LinkageEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
 
-    def __init__(self, path: str, verbose: bool = False):
-        M, F, params = kane(n=N_LINKS)
-        self.M_func = lambdify(params, M)
-        self.F_func = lambdify(params, F)
-        low = np.array(OBS_LOW, dtype=np.float32)
-        high = np.array(OBS_HIGH, dtype=np.float32)
-        self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
-        print('observation_space: ', self.observation_space )
+    def __init__(self, path: str, w_params: dict, verbose: bool = False):
+        self.n_links = w_params["N_LINKS"]
+        M, F, m_params = kane(n=w_params["N_LINKS"])
+        self.M_func = lambdify(m_params, M)
+        self.F_func = lambdify(m_params, F)
+        self.observation_space = spaces.Box(
+            low=w_params["OBS_LOW"], high=w_params["OBS_HIGH"], dtype=np.float32
+        )
+        print("observation_space: ", self.observation_space)
 
         self.action_space = spaces.Box(
-            low=ACT_LOW, high=ACT_HIGH, shape=(N_LINKS,), dtype=np.float32
+            low=w_params["ACT_LOW"],
+            high=w_params["ACT_HIGH"],
+            shape=(w_params["N_LINKS"],),
+            dtype=np.float32,
         )
-        print('action_space: ', self.action_space)
+        print("action_space: ", self.action_space)
         self.cur_time = 0
         self.trajectory_points = get_coordinates(path)
         num_frames = self.trajectory_points.shape[0]
-        self.trajectory_timestamps = np.array([i * 1.0 / VIDEO_FPS for i in range(num_frames)])
+        self.trajectory_timestamps = np.array(
+            [i * 1.0 / w_params["VIDEO_FPS"] for i in range(num_frames)]
+        )
         self.end_time = self.trajectory_timestamps.max()
 
-        self.interpolated_trajectory = get_interpolated(self.trajectory_points, self.trajectory_timestamps)
+        self.interpolated_trajectory = get_interpolated(
+            self.trajectory_points, self.trajectory_timestamps
+        )
+
+        self.time_step = w_params["TIME_STEP"]
+        self.param_vals = w_params["PARAM_VALS"]
+
         self.u = None
         self.verbose = verbose
         self.reset()
 
     def reset(self):
-        init_coords = self.trajectory_points[0]
+        init_coords = self.trajectory_points[0][: self.n_links]
         init_vel = np.array([0] * init_coords.shape[0])
         init_state = np.concatenate((init_coords, init_vel))
         self.state = init_state
@@ -105,54 +77,69 @@ class LinkageEnv(gym.Env):
     def step(self, u):
         self.u = u
         # self.frame += int(TIME_STEP * VIDEO_FPS
-        t = np.linspace(0, TIME_STEP, 10)
-        next_t = self.cur_time + TIME_STEP
+        t = np.linspace(0, self.time_step, 10)
+        next_t = self.cur_time + self.time_step
         state0 = self.state
 
-        trj_state = np.array([
-            self.interpolated_trajectory[i](self.cur_time) for i in range(len(self.interpolated_trajectory))
-        ])
-
+        trj_state = np.array(
+            [
+                self.interpolated_trajectory[i](self.cur_time)
+                for i in range(len(self.interpolated_trajectory))
+            ]
+        )
+        print(trj_state)
         if self.verbose:
-            print('='*50 + '\n')
-            print(f'START STEP AT t = {self.cur_time}')
-            print(f'\t before state: {self.state}')
-            print(f'\t before trj: {trj_state}')
-            print(f'\t control = {u}')
+            print("=" * 50 + "\n")
+            print(f"START STEP AT t = {self.cur_time}")
+            print(f"\t before state: {self.state}")
+            print(f"\t before trj: {trj_state}")
+            print(f"\t control = {u}")
 
-        next_coordinates = np.array([
-            self.interpolated_trajectory[i](next_t) for i in range(len(self.interpolated_trajectory))
-        ])
-        self.state = odeint(self._rhs, state0, t, args=(PARAM_VALS,))[-1]    
-        self.cur_time += TIME_STEP
+        next_coordinates = np.array(
+            [
+                self.interpolated_trajectory[i](next_t)
+                for i in range(len(self.interpolated_trajectory))
+            ]
+        )
+        self.state = odeint(self._rhs, state0, t, args=(self.param_vals,))[-1]
+        self.cur_time += self.time_step
         is_out_of_bounds = self._is_out_of_bounds()
         is_end = next_t >= self.end_time
 
-        reward = -np.exp(sum(abs(self.state[:5] - next_coordinates)))
-        if is_out_of_bounds:
-            reward -= 1000
-        
+        cost = sum(abs(self.state[: self.n_links])) + sum(abs(u))
+        reward = (
+            -sum(abs(self.state[: self.n_links] - next_coordinates[: self.n_links]))
+            ** 2
+            - 0.1 * cost ** 2
+        )
+
         if self.verbose:
-            print(f'\t after state = {self.state}')
-            print(f'\t after trj = {next_coordinates}')
-            print(f'\t is_out_of_bounds = {is_out_of_bounds}, is_end = {is_end}')
-            print(f'\t reward = {reward}')
-            print('='*50 + '\n')
+            print(f"\t after state = {self.state}")
+            print(f"\t after trj = {next_coordinates}")
+            print(f"\t is_out_of_bounds = {is_out_of_bounds}, is_end = {is_end}")
+            print(f"\t reward = {reward}")
+            print("=" * 50 + "\n")
 
         terminate = is_out_of_bounds or is_end
 
         if terminate and self.verbose:
-            print('*'*50)
-            print('*****' + 'TERMINATE' + '*****')
-            print('*'*50)
+            print("*" * 50)
+            print("*****" + "TERMINATE" + "*****")
+            print("*" * 50)
 
-        return (self.state, reward, terminate, {})
+        return (self.state, reward, is_end, {})
 
     def _is_out_of_bounds(self):
         return not self.observation_space.contains(self.state)
 
+    def _normalize_angles(self, q_coords):
+        return [((q_coord + np.pi) % (2 * np.pi)) - np.pi for q_coord in q_coords]
+
     def render(self):
         pass
+
+    def _xy_coords(self, q):
+        lengths = [self.param_vals[i] for i in range(1, self.n_links, 2)]
 
     def _rhs(self, x, t, args):
         arguments = np.hstack((x, self.u, args))

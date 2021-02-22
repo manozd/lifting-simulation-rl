@@ -12,21 +12,39 @@ from rl.random import OrnsteinUhlenbeckProcess
 from lifting_rl.linkage_env import LinkageEnv
 import tensorflow as tf
 
-parser = argparse.ArgumentParser(
-    description='Learn model'
+parser = argparse.ArgumentParser(description="Learn model")
+parser.add_argument(
+    "--angles",
+    type=str,
+    required=False,
+    default="/home/mans/git/human-body-model-dynamics/data/skeleton_angles.csv",
 )
-parser.add_argument('--angles', type=str, required=False, default="/home/p.zaidel/Projects/lifting-simulation-rl/data/skeleton_angles.csv")
 args = parser.parse_args()
 
 angles_file = args.angles
 
 ENV_NAME = "Linkage-v0"
+DEVICE = None
 
-tf.debugging.set_log_device_placement(True)
 
-with tf.device('/device:GPU:2'):
+params = {
+    "N_LINKS": 2,
+    "INIT_STATE": np.array([np.pi / 2, np.pi / 2, 0, 0], dtype=np.float32),
+    "PARAM_VALS": np.array([9.81, 0.4, 1, 0.4, 1], dtype=np.float32),
+    "OBS_LOW": np.array([0, 3 * np.pi / 8, -5 * np.pi, -5 * np.pi], dtype=np.float32),
+    "OBS_HIGH": np.array(
+        [5 * np.pi / 8, 3 * np.pi / 2, 5 * np.pi, 5 * np.pi], dtype=np.float32
+    ),
+    "ACT_LOW": -100,
+    "ACT_HIGH": 100,
+    "TIME_STEP": 0.01,
+    "VIDEO_FPS": 30,
+}
+
+
+with tf.device(DEVICE):
     # Get the environment and extract the number of actions.
-    env = LinkageEnv(angles_file)
+    env = LinkageEnv(angles_file, params, verbose=0)
     assert len(env.action_space.shape) == 1
     nb_actions = env.action_space.shape[0]
 
