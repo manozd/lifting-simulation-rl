@@ -58,7 +58,7 @@ class LinkageEnv(gym.Env):
             self.trajectory_points, self.trajectory_timestamps
         )
 
-        self.time_steps = w_params["TIME_STEPS"]
+        self.time_step = w_params["TIME_STEPS"]
         self.param_vals = w_params["PARAM_VALS"]
 
         self.u = None
@@ -76,8 +76,8 @@ class LinkageEnv(gym.Env):
     def step(self, u):
         self.u = u
         # self.frame += int(TIME_STEP * VIDEO_FPS
-        t = np.linspace(0, self.time_steps, 10)
-        next_t = self.cur_time + self.time_steps
+        t = np.linspace(0, self.time_step, 10)
+        next_t = self.cur_time + self.time_step
         state0 = self.state
 
         trj_state = np.array(
