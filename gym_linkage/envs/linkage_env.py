@@ -43,10 +43,14 @@ N_LINKS = 2
 #     5*np.pi,
 # ]
 
-GOAL_POS = np.array([np.pi / 4, 3*np.pi/4, 0, 0, np.pi / 4, 3*np.pi / 4, 0 ,0], dtype=np.float32)
+GOAL_POS = np.array(
+    [np.pi / 4, 3 * np.pi / 4, 0, 0, np.pi / 4, 3 * np.pi / 4, 0, 0], dtype=np.float32
+)
 
 PARAM_VALS = np.array([9.81, 0.4, 1, 0.4, 1], dtype=np.float32)
-INIT_STATE = np.array([np.pi / 4, 3*np.pi/4, 0, 0, np.pi / 4, 3*np.pi / 4, 0 ,0], dtype=np.float32)
+INIT_STATE = np.array(
+    [np.pi / 4, 3 * np.pi / 4, 0, 0, np.pi / 4, 3 * np.pi / 4, 0, 0], dtype=np.float32
+)
 OBS_LOW = [
     0,
     3 * np.pi / 8,
@@ -183,7 +187,7 @@ class LinkageEnv(gym.Env):
         self.reset()
 
     def reset(self):
-        self.state = np.hstack([self.q[0][:2], [0,0], self.q[0][:2], [0,0]])
+        self.state = np.hstack([self.q[0][:2], [0, 0], self.q[0][:2], [0, 0]])
         self.t_step = 0
         return self.state
 
@@ -195,8 +199,8 @@ class LinkageEnv(gym.Env):
         self.t_step += 1
         self.state = np.hstack([x0, x1])
         state = np.hstack([self.state[:2], self.state[4:6]])
-        ref_state = np.hstack([self.q[self.t_step-1][:2], self.q[self.t_step][:2]])
-        reward = -sum(np.power(state - ref_state, 2)) - pow(sum(abs(u)),2)
+        ref_state = np.hstack([self.q[self.t_step - 1][:2], self.q[self.t_step][:2]])
+        reward = -sum(np.power(state - ref_state, 2)) - pow(sum(abs(u)), 2)
         terminate = self._terminate()
         return (self.state, reward, False, {})
 

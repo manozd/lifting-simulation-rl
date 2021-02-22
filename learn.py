@@ -8,11 +8,12 @@ from keras.optimizers import Adam
 
 from rl.agents import DDPGAgent
 from rl.memory import SequentialMemory
-from rl.random import OrnsteinUhlenbeckProcess,  GaussianWhiteNoiseProcess
+from rl.random import OrnsteinUhlenbeckProcess, GaussianWhiteNoiseProcess
 import tensorflow as tf
 from rl.callbacks import WandbLogger
 
 ENV_NAME = "Linkage-v0"
+
 
 def schedule(epoch, lr):
     if epoch < 10:
@@ -57,13 +58,13 @@ print(critic.summary())
 # Finally, we configure and compile our agent. You can use every built-in Keras optimizer and
 # even the metrics!
 memory = SequentialMemory(limit=10000, window_length=1)
-random_process =  GaussianWhiteNoiseProcess(size=nb_actions, mu=0.0, sigma=0.5)
+random_process = GaussianWhiteNoiseProcess(size=nb_actions, mu=0.0, sigma=0.5)
 agent = DDPGAgent(
     nb_actions=nb_actions,
     actor=actor,
     critic=critic,
     critic_action_input=action_input,
-    memory=memory
+    memory=memory,
 )
 agent.compile(Adam(lr=0.01), metrics=["mse"])
 
