@@ -29,7 +29,7 @@ def get_interpolated(coords, timestamps, mode="spline"):
 
             def f(x):
                 tck = interpolate.splrep(timestamps, y)
-                return interpolate.splev(timestamps, tck)
+                return np.float32(interpolate.splev(x, tck))
 
         interpolated_coords.append(f)
     return interpolated_coords
@@ -55,19 +55,29 @@ class LinkageEnv(gym.Env):
             dtype=np.float32,
         )
         print("action_space: ", self.action_space)
-        self.cur_time = 0
+        self.cur_step = 0
         self.trajectory_points = get_coordinates(path)
         num_frames = self.trajectory_points.shape[0]
         self.trajectory_timestamps = np.array(
             [i * 1.0 / w_params["VIDEO_FPS"] for i in range(num_frames)]
         )
-        self.end_time = self.trajectory_timestamps.max()
+
+        self.time_step = w_params["TIME_STEP"]
+        self.end_time = self.trajectory_timestamps.max() // self.time_step
 
         self.interpolated_trajectory = get_interpolated(
             self.trajectory_points, self.trajectory_timestamps
         )
-
-        self.time_step = w_params["TIME_STEP"]
+        self.coordinates = np.array(
+            [
+                [
+                    self.interpolated_trajectory[i](t)
+                    for i in range(len(self.interpolated_trajectory))
+                ]
+                for t in self.trajectory_timestamps
+            ],
+            dtype=np.float32,
+        )
         self.param_vals = w_params["PARAM_VALS"]
 
         self.u = None
@@ -79,22 +89,16 @@ class LinkageEnv(gym.Env):
         init_vel = np.array([0] * init_coords.shape[0])
         init_state = np.concatenate((init_coords, init_vel))
         self.state = init_state
-        self.cur_time = 0
+        self.cur_step = 0
         return self.state
 
     def step(self, u):
         self.u = u
         # self.frame += int(TIME_STEP * VIDEO_FPS
         t = np.linspace(0, self.time_step, 10)
-        next_t = self.cur_time + self.time_step
+        next_step = self.cur_step + 1
         state0 = self.state
 
-        trj_state = np.array(
-            [
-                self.interpolated_trajectory[i](self.cur_time)
-                for i in range(len(self.interpolated_trajectory))
-            ]
-        )
         if self.verbose:
             print("=" * 50 + "\n")
             print(f"START STEP AT t = {self.cur_time}")
@@ -102,20 +106,19 @@ class LinkageEnv(gym.Env):
             print(f"\t before trj: {trj_state}")
             print(f"\t control = {u}")
 
-        next_coordinates = np.array(
-            [
-                self.interpolated_trajectory[i](next_t)
-                for i in range(len(self.interpolated_trajectory))
-            ]
-        )
         self.state = odeint(self._rhs, state0, t, args=(self.param_vals,))[-1]
-        self.cur_time += self.time_step
+        self.cur_step += 1
         is_out_of_bounds = self._is_out_of_bounds()
-        is_end = next_t >= self.end_time
+        # is_end = next_t >= self.end_time
 
         cost = sum(abs(self.state[: self.n_links])) + sum(abs(u))
         reward = (
-            -sum(abs(self.state[: self.n_links] - next_coordinates[: self.n_links]))
+            -sum(
+                abs(
+                    self.state[: self.n_links]
+                    - self.coordinates[next_step][: self.n_links]
+                )
+            )
             ** 2
             - 0.1 * cost ** 2
         )
@@ -127,14 +130,14 @@ class LinkageEnv(gym.Env):
             print(f"\t reward = {reward}")
             print("=" * 50 + "\n")
 
-        terminate = is_out_of_bounds or is_end
+        terminate = is_out_of_bounds
 
         if terminate and self.verbose:
             print("*" * 50)
             print("*****" + "TERMINATE" + "*****")
             print("*" * 50)
 
-        return (self.state, reward, is_end, {})
+        return (self.state, reward, False, {})
 
     def _is_out_of_bounds(self):
         return not self.observation_space.contains(self.state)
