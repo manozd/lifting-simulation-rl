@@ -7,7 +7,7 @@ import torch.optim as optim
 
 
 class OUActionNoise(object):
-    def __init__(self, theta=0.15, mu=0, sigma=0.3, dt=0.2, x0=None):
+    def __init__(self, mu, theta=0.15, sigma=0.3, dt=1e-2, x0=None):
         self.theta = theta
         self.mu = mu
         self.sigma = sigma
@@ -21,7 +21,8 @@ class OUActionNoise(object):
             + self.theta * (self.mu - self.x_prev) * self.dt
             + self.sigma * np.sqrt(self.dt) * np.random.normal(size=self.mu.shape)
         )
-        self.x_prev = x0
+        self.x_prev = x
+        return x
 
     def reset(self):
         self.x_prev = self.x0 if self.x0 else np.zeros_like(self.mu)
@@ -33,7 +34,6 @@ class ReplayBuffer(object):
         self.memory_counter = 0
         self.state_memory = np.zeros((self.memory_size, *input_shape))
         self.new_state_memory = np.zeros((self.memory_size, *input_shape))
-        print(n_actions)
         self.action_memory = np.zeros((self.memory_size, n_actions))
         self.reward_memory = np.zeros(self.memory_size)
         self.terminal_memory = np.zeros(self.memory_size, dtype=np.float32)
@@ -53,7 +53,7 @@ class ReplayBuffer(object):
 
         states = self.state_memory[batch]
         new_states = self.new_state_memory[batch]
-        reward = self.reward_memory[batch]
+        rewards = self.reward_memory[batch]
         actions = self.action_memory[batch]
         terminal = self.terminal_memory[batch]
 
@@ -62,7 +62,14 @@ class ReplayBuffer(object):
 
 class CriticNetwork(nn.Module):
     def __init__(
-        self, lr, input_dims, fc1_dims, fc2_dims, n_actions, name, chkpt_dir="tmp/ddpg"
+        self,
+        lr,
+        input_dims,
+        fc1_dims,
+        fc2_dims,
+        n_actions,
+        name,
+        chkpt_dir="/home/mans/Documents/ddpg",
     ):
         super(CriticNetwork, self).__init__()
         self.input_dims = input_dims
@@ -118,11 +125,17 @@ class CriticNetwork(nn.Module):
 
 class ActorNetwork(nn.Module):
     def __init__(
-        self, lr, input_dims, fc1_dims, fc2_dims, n_actions, name, chkpt_dir="tmp/ddpg"
+        self,
+        lr,
+        input_dims,
+        fc1_dims,
+        fc2_dims,
+        n_actions,
+        name,
+        chkpt_dir="/home/mans/Documents/ddpg",
     ):
         super(ActorNetwork, self).__init__()
         self.input_dims = input_dims
-        print(self.input_dims)
         self.n_actions = n_actions
         self.fc1_dims = fc1_dims
         self.fc2_dims = fc2_dims
@@ -130,14 +143,14 @@ class ActorNetwork(nn.Module):
 
         self.fc1 = nn.Linear(*self.input_dims, self.fc1_dims)
         f1 = 1 / np.sqrt(self.fc1.weight.data.size()[0])
-        T.nn.init.uniform_(self.fc1.weight.data - f1, f1)
-        T.nn.init.uniform_(self.fc1.bias.data - f1, f1)
+        T.nn.init.uniform_(self.fc1.weight.data, -f1, f1)
+        T.nn.init.uniform_(self.fc1.bias.data, -f1, f1)
         self.bn1 = nn.LayerNorm(self.fc1_dims)
 
-        self.fc2 = nn.Linear(*self.input_dims, self.fc2_dims)
+        self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
         f2 = 1 / np.sqrt(self.fc2.weight.data.size()[0])
-        T.nn.init.uniform_(self.fc2.weight.data - f2, f2)
-        T.nn.init.uniform_(self.fc2.bias.data - f2, f2)
+        T.nn.init.uniform_(self.fc2.weight.data, -f2, f2)
+        T.nn.init.uniform_(self.fc2.bias.data, -f2, f2)
         self.bn2 = nn.LayerNorm(self.fc2_dims)
 
         f3 = 0.003
@@ -155,7 +168,10 @@ class ActorNetwork(nn.Module):
         x = F.relu(x)
         x = self.fc2(x)
         x = self.bn2(x)
+        x = F.relu(x)
         x = T.tanh(self.mu(x))
+
+        return x
 
     def save_checkpoint(self):
         print("...saving_checkpoint...")
@@ -231,7 +247,7 @@ class Agent(object):
         mu_prime = mu + T.tensor(self.noise(), dtype=T.float).to(self.actor.device)
 
         self.actor.train()
-        return mu_prime.cpu().detach.numpy()
+        return mu_prime.cpu().detach().numpy()
 
     def remember(self, state, action, reward, new_state, done):
         self.memory.store_transition(state, action, reward, new_state, done)
