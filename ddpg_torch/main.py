@@ -20,9 +20,9 @@ params = {
     "N_LINKS": 2,
     "INIT_STATE": np.array([np.pi / 2, np.pi / 2, 0, 0], dtype=np.float32),
     "PARAM_VALS": np.array([9.81, 0.4, 1, 0.4, 1], dtype=np.float32),
-    "OBS_LOW": np.array([0, 3 * np.pi / 8, -5 * np.pi, -5 * np.pi], dtype=np.float32),
+    "OBS_LOW": np.array([0, 3 * np.pi / 8, -10 * np.pi, -10 * np.pi], dtype=np.float32),
     "OBS_HIGH": np.array(
-        [5 * np.pi / 8, 3 * np.pi / 2, 5 * np.pi, 5 * np.pi], dtype=np.float32
+        [5 * np.pi / 8, 3 * np.pi / 2, 10 * np.pi, 10 * np.pi], dtype=np.float32
     ),
     "ACT_LOW": -100,
     "ACT_HIGH": 100,
@@ -53,6 +53,7 @@ for i in range(100000):
     score = 0
     obs = env.reset()
     while not done:
+        env.render()
         act = agent.choose_action(obs)
         new_state, reward, done, info = env.step(act)
         agent.remember(obs, act, reward, new_state, int(done))
@@ -68,3 +69,5 @@ for i in range(100000):
         "score %.2f" % score,
         "100 game average %.2f" % np.mean(score_history[-100:]),
     )
+
+env.close()

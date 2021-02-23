@@ -40,6 +40,7 @@ class LinkageEnv(gym.Env):
 
     def __init__(self, path: str, w_params: dict, verbose: bool = False, otype="cs"):
         self.otype = otype
+        self.viewer = None
         self.n_links = w_params["N_LINKS"]
         M, F, m_params = kane(n=w_params["N_LINKS"])
         self.M_func = lambdify(m_params, M)
@@ -50,9 +51,8 @@ class LinkageEnv(gym.Env):
         )
 
         self.observation_space = spaces.Box(
-            low=w_params["ACT_LOW"],
-            high=w_params["ACT_HIGH"],
-            shape=(w_params["N_LINKS"],),
+            low=w_params["OBS_LOW"],
+            high=w_params["OBS_HIGH"],
             dtype=np.float32,
         )
         print("observation_space: ", self.observation_space)
@@ -105,7 +105,6 @@ class LinkageEnv(gym.Env):
         #     self.coordinates.append(t_coords)
 
         self.param_vals = w_params["PARAM_VALS"]
-
         self.u = None
         self.verbose = verbose
         self.reset()
@@ -176,9 +175,6 @@ class LinkageEnv(gym.Env):
     def _normalize_angles(self, q_coords):
         return [((q_coord + np.pi) % (2 * np.pi)) - np.pi for q_coord in q_coords]
 
-    def render(self, mode="human"):
-        pass
-
     def _transform_state(self, state):
         if self.otype == "angles":
             return state[: self.n_links]
@@ -206,3 +202,45 @@ class LinkageEnv(gym.Env):
             np.linalg.solve(self.M_func(*arguments), self.F_func(*arguments))
         ).T[0]
         return dx
+
+    def render(self, mode="human"):
+        from gym.envs.classic_control import rendering
+
+        s = self.state
+
+        if self.viewer is None:
+            self.viewer = rendering.Viewer(400,400)
+            bound = 0.4 + 0.4 + 0.2  # 2.2 for default
+            self.viewer.set_bounds(-bound,bound,-bound,bound)
+
+        if s is None: return None
+
+        p1 = [0.4 *
+              np.cos(s[0]), 0.4 * np.sin(s[0])]
+
+        p2 = [p1[0] + 0.4 * np.cos(s[1]),
+              p1[1] + 0.4 * np.sin(s[1])]
+
+        xys = np.array([[0,0], p1, p2])
+        thetas = [s[0] % (2*np.pi), (s[1]) % (2 * np.pi)]
+        link_lengths = [0.4, 0.4]
+
+        self.viewer.draw_line((-2.2, 1), (2.2, 1))
+        for ((x,y),th,llen) in zip(xys, thetas, link_lengths):
+            l,r,t,b = 0, llen, .05, -.05
+            jtransform = rendering.Transform(rotation=th, translation=(x,y))
+            link = self.viewer.draw_polygon([(l,b), (l,t), (r,t), (r,b)])
+            link.add_attr(jtransform)
+            link.set_color(0,.8, .8)
+            circ = self.viewer.draw_circle(.05)
+            circ.set_color(.8, .8, 0)
+            circ.add_attr(jtransform)
+
+        return self.viewer.render(return_rgb_array = mode=='rgb_array')
+    
+    def close(self):
+        if self.viewer:
+            self.viewer.close()
+            self.viewer = None
+
+
