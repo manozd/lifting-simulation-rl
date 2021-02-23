@@ -93,7 +93,7 @@ class LinkageEnv(gym.Env):
         return self.state
 
     def step(self, u):
-        self.u = u
+        self.u = np.clip()
         # self.frame += int(TIME_STEP * VIDEO_FPS
         t = np.linspace(0, self.time_step, 10)
         next_step = self.cur_step + 1
