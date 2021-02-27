@@ -7,7 +7,7 @@ import torch.optim as optim
 
 
 class OUActionNoise(object):
-    def __init__(self, mu, theta=0.15, sigma=0.3, dt=1e-2, x0=None):
+    def __init__(self, mu, sigma=0.15, theta=0.3, dt=1e-2, x0=None):
         self.theta = theta
         self.mu = mu
         self.sigma = sigma

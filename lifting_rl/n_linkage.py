@@ -48,6 +48,8 @@ def kane(n=5, mode="rigid_body", hands_load=False):
 
     km = KanesMethod(N, q_ind=q, u_ind=u, kd_eqs=kindiffs)
     fr, frstar = km.kanes_equations(phys_objs, loads=loads)
+    fr.simplify()
+    frstar.simplify()
     dynamic = q + u + f
     dummy_symbols = [Dummy() for i in dynamic]
     dummy_dict = dict(zip(dynamic, dummy_symbols))
@@ -57,4 +59,6 @@ def kane(n=5, mode="rigid_body", hands_load=False):
         params += [l[i], m[i]]
     M = km.mass_matrix_full.subs(kindiff_dict).subs(dummy_dict)
     F = km.forcing_full.subs(kindiff_dict).subs(dummy_dict)
+    M.simplify()
+    F.simplify()
     return M, F, dummy_symbols + params
