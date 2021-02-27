@@ -137,15 +137,12 @@ class LinkageEnv(gym.Env):
         self.state = odeint(self._rhs, state0, t, args=(self.param_vals,))[-1]
         self.cur_step += 1
 
-        reward = (
-            0.1
-            - (
-                sum(abs(self.state[: self.n_links] - self.goal_pos[: self.n_links]))
-                - 0.1 * sum(abs(self.state[self.n_links :]))
-                - 0.01 * sum(abs(self.u))
-            )
-            / 28.8
+        pos_reward = (
+            -sum(abs(self.state[: self.n_links] - self.goal_pos[: self.n_links])) ** 2
         )
+        speed_reward = -sum(abs(self.state[self.n_links :])) ** 2
+        control_reward = -sum(abs(self.u)) ** 2
+        reward = (pos_reward + 0.1 * speed_reward + 0.001 * control_reward) / 288
         if self.verbose:
             print(f"\t after state = {self.state}")
             print(f"\t after trj = {self.coordinates[next_step]}")
@@ -155,9 +152,7 @@ class LinkageEnv(gym.Env):
 
         is_end = self.cur_step == 288
 
-        terminate = self._is_out_of_bounds() or is_end
-        if self._is_out_of_bounds():
-            reward -= 10
+        terminate = is_end
 
         if terminate and self.verbose:
             print("*" * 50)
@@ -195,11 +190,14 @@ class LinkageEnv(gym.Env):
 
         p1 = [0.4 * np.cos(s[0]), 0.4 * np.sin(s[0])]
 
-        p2 = [p1[0] + 0.4 * np.cos(s[1]), p1[1] + 0.4 * np.sin(s[1])]
+        # p2 = [p1[0] + 0.4 * np.cos(s[1]), p1[1] + 0.4 * np.sin(s[1])]
 
-        xys = np.array([[0, 0], p1, p2])
-        thetas = [s[0] % (2 * np.pi), (s[1]) % (2 * np.pi)]
-        link_lengths = [0.4, 0.4]
+        xys = np.array([[0, 0], p1])
+        # thetas = [s[0] % (2 * np.pi), (s[1]) % (2 * np.pi)]
+        thetas = [s[0] % (2 * np.pi)]
+
+        # link_lengths = [0.4, 0.4]
+        link_lengths = [0.4]
 
         self.viewer.draw_line((-2.2, 1), (2.2, 1))
         for ((x, y), th, llen) in zip(xys, thetas, link_lengths):
