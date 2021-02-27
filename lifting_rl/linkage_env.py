@@ -38,9 +38,7 @@ def get_interpolated(coords, timestamps, mode="spline"):
 class LinkageEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
 
-    def __init__(
-        self, path: str, w_params: dict, verbose: bool = False, otype="angles"
-    ):
+    def __init__(self, path: str, w_params: dict, verbose: bool = False):
         self.viewer = None
         self.n_links = w_params["N_LINKS"]
 
