@@ -38,10 +38,12 @@ def get_interpolated(coords, timestamps, mode="spline"):
 class LinkageEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
 
-    def __init__(self, path: str, w_params: dict, verbose: bool = False, otype="cs"):
-        self.otype = otype
+    def __init__(
+        self, path: str, w_params: dict, verbose: bool = False, otype="angles"
+    ):
         self.viewer = None
         self.n_links = w_params["N_LINKS"]
+
         M, F, m_params = kane(n=w_params["N_LINKS"])
         self.M_func = lambdify(m_params, M)
         self.F_func = lambdify(m_params, F)
@@ -65,35 +67,36 @@ class LinkageEnv(gym.Env):
         )
         print("action_space: ", self.action_space)
         self.cur_step = 0
-        self.trajectory_points = get_coordinates(path)
-        num_frames = self.trajectory_points.shape[0]
-        self.trajectory_timestamps = np.array(
-            [i * 1.0 / w_params["VIDEO_FPS"] for i in range(num_frames)]
-        )
+
+        # self.trajectory_points = get_coordinates(path)
+        # num_frames = self.trajectory_points.shape[0]
+        # self.trajectory_timestamps = np.array(
+        #     [i * 1.0 / w_params["VIDEO_FPS"] for i in range(num_frames)]
+        # )
 
         self.time_step = w_params["TIME_STEP"]
-        end_time = round(num_frames / w_params["VIDEO_FPS"], 2)
+        # end_time = round(num_frames / w_params["VIDEO_FPS"], 2)
 
-        self.interpolated_trajectory = get_interpolated(
-            self.trajectory_points, self.trajectory_timestamps
-        )
-        timestamps = [
-            np.float32(i * self.time_step)
-            for i in range(int(end_time // self.time_step))
-        ]
-        self.obs_space_shape = (2 * w_params["N_LINKS"],)
-        coordinates = [
-            [
-                self.interpolated_trajectory[i](t)
-                for i in range(len(self.interpolated_trajectory))
-            ]
-            for t in timestamps
-        ]
+        # self.interpolated_trajectory = get_interpolated(
+        #     self.trajectory_points, self.trajectory_timestamps
+        # )
+        # timestamps = [
+        #     np.float32(i * self.time_step)
+        #     for i in range(int(end_time // self.time_step))
+        # ]
 
-        self.coordinates = np.array(
-            [self._transform_state(step_coord) for step_coord in coordinates],
-            dtype=np.float32,
-        )
+        # coordinates = [
+        #     [
+        #         self.interpolated_trajectory[i](t)
+        #         for i in range(len(self.interpolated_trajectory))
+        #     ]
+        #     for t in timestamps
+        # ]
+
+        # self.coordinates = np.array(
+        #     [self._transform_state(step_coord) for step_coord in coordinates],
+        #     dtype=np.float32,
+        # )
 
         # self.coordinates = []
         # for t in timestamps:
@@ -105,27 +108,23 @@ class LinkageEnv(gym.Env):
         #     self.coordinates.append(t_coords)
 
         self.param_vals = w_params["PARAM_VALS"]
+        self.goal_pos = w_params["GOAL_POS"]
+        self.act_max = w_params["ACT_HIGH"]
         self.u = None
         self.verbose = verbose
         self.reset()
 
     def reset(self):
-        init_coords = self.trajectory_points[0][: self.n_links]
+        # init_coords = self.trajectory_points[0][: self.n_links]
+        init_coords = self.goal_pos[: self.n_links]
         init_vel = np.array([0] * init_coords.shape[0])
         init_state = np.concatenate((init_coords, init_vel))
         self.state = init_state
         self.cur_step = 0
-        state = np.hstack(
-            (
-                self._transform_state(self.state[: self.n_links]),
-                self.state[self.n_links :],
-            )
-        )
-        return state
+        return self.state
 
     def step(self, u):
-        self.u = u * 100
-        # self.frame += int(TIME_STEP * VIDEO_FPS
+        self.u = u * self.act_max
         t = np.linspace(0, self.time_step, 2)
         next_step = self.cur_step + 1
         state0 = self.state
@@ -139,22 +138,16 @@ class LinkageEnv(gym.Env):
 
         self.state = odeint(self._rhs, state0, t, args=(self.param_vals,))[-1]
         self.cur_step += 1
-        is_out_of_bounds = self._is_out_of_bounds()
-        # is_end = next_t >= self.end_time
 
-        cost = sum(abs(self.state[self.n_links :])) ** 2 + sum(abs(self.u)) ** 2
-
-        state = np.hstack(
-            (
-                self._transform_state(self.state[: self.n_links]),
-                self.state[self.n_links :],
-            )
-        )
         reward = (
-            -sum(abs(state[: 2 * self.n_links] - self.coordinates[next_step]) ** 2)
-            - 0.1 * cost
+            0.1
+            - (
+                sum(abs(self.state[: self.n_links] - self.goal_pos[: self.n_links]))
+                - 0.1 * sum(abs(self.state[self.n_links :]))
+                - 0.01 * sum(abs(self.u))
+            )
+            / 28.8
         )
-
         if self.verbose:
             print(f"\t after state = {self.state}")
             print(f"\t after trj = {self.coordinates[next_step]}")
@@ -162,39 +155,25 @@ class LinkageEnv(gym.Env):
             print(f"\t reward = {reward}")
             print("=" * 50 + "\n")
 
-        terminate = self._is_out_of_bounds() or self.cur_step == 288
+        is_end = self.cur_step == 288
+
+        terminate = self._is_out_of_bounds() or is_end
+        if self._is_out_of_bounds():
+            reward -= 10
+
         if terminate and self.verbose:
             print("*" * 50)
             print("*****" + "TERMINATE" + "*****")
             print("*" * 50)
-        return (np.array(state, dtype=np.float32), reward, terminate, {})
+        return self.state, reward, terminate, {}
 
     def _is_out_of_bounds(self):
         return not self.observation_space.contains(self.state)
 
-    def _normalize_angles(self, q_coords):
-        return [((q_coord + np.pi) % (2 * np.pi)) - np.pi for q_coord in q_coords]
-
-    def _transform_state(self, state):
-        if self.otype == "angles":
-            return state[: self.n_links]
-        if self.otype == "xy":
-            return self._xy(state)
-        if self.otype == "cs":
-            return self._cs(state)
-
-    def _xy(self, state):
-        l = [self.param_vals[i] for i in range(1, self.n_links, 2)]
-        new_state = []
-        for idx, q in enumerate(state[: self.n_links]):
-            new_state.extend([l[idx] * np.cos(q), l[idx] * np.sin(q)])
-        return np.array(new_state, dtype=np.float32)
-
-    def _cs(self, state):
-        new_state = []
-        for q in state[: self.n_links]:
-            new_state.extend([np.cos(q), np.sin(q)])
-        return np.array(new_state, dtype=np.float32)
+    def _normalize(self, vector, max):
+        return np.array(
+            [coord / np.sqrt(sum(vector ** 2)) for coord in vector], dtype=np.float32
+        )
 
     def _rhs(self, x, t, args):
         arguments = np.hstack((x, self.u, args))
@@ -209,38 +188,35 @@ class LinkageEnv(gym.Env):
         s = self.state
 
         if self.viewer is None:
-            self.viewer = rendering.Viewer(400,400)
+            self.viewer = rendering.Viewer(400, 400)
             bound = 0.4 + 0.4 + 0.2  # 2.2 for default
-            self.viewer.set_bounds(-bound,bound,-bound,bound)
+            self.viewer.set_bounds(-bound, bound, -bound, bound)
 
-        if s is None: return None
+        if s is None:
+            return None
 
-        p1 = [0.4 *
-              np.cos(s[0]), 0.4 * np.sin(s[0])]
+        p1 = [0.4 * np.cos(s[0]), 0.4 * np.sin(s[0])]
 
-        p2 = [p1[0] + 0.4 * np.cos(s[1]),
-              p1[1] + 0.4 * np.sin(s[1])]
+        p2 = [p1[0] + 0.4 * np.cos(s[1]), p1[1] + 0.4 * np.sin(s[1])]
 
-        xys = np.array([[0,0], p1, p2])
-        thetas = [s[0] % (2*np.pi), (s[1]) % (2 * np.pi)]
+        xys = np.array([[0, 0], p1, p2])
+        thetas = [s[0] % (2 * np.pi), (s[1]) % (2 * np.pi)]
         link_lengths = [0.4, 0.4]
 
         self.viewer.draw_line((-2.2, 1), (2.2, 1))
-        for ((x,y),th,llen) in zip(xys, thetas, link_lengths):
-            l,r,t,b = 0, llen, .05, -.05
-            jtransform = rendering.Transform(rotation=th, translation=(x,y))
-            link = self.viewer.draw_polygon([(l,b), (l,t), (r,t), (r,b)])
+        for ((x, y), th, llen) in zip(xys, thetas, link_lengths):
+            l, r, t, b = 0, llen, 0.05, -0.05
+            jtransform = rendering.Transform(rotation=th, translation=(x, y))
+            link = self.viewer.draw_polygon([(l, b), (l, t), (r, t), (r, b)])
             link.add_attr(jtransform)
-            link.set_color(0,.8, .8)
-            circ = self.viewer.draw_circle(.05)
-            circ.set_color(.8, .8, 0)
+            link.set_color(0.8, 0.3, 0.3)
+            circ = self.viewer.draw_circle(0.05)
+            circ.set_color(0.0, 0.0, 0)
             circ.add_attr(jtransform)
 
-        return self.viewer.render(return_rgb_array = mode=='rgb_array')
-    
+        return self.viewer.render(return_rgb_array=mode == "rgb_array")
+
     def close(self):
         if self.viewer:
             self.viewer.close()
             self.viewer = None
-
-
