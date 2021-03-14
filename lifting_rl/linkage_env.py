@@ -114,8 +114,8 @@ class LinkageEnv(gym.Env):
 
     def reset(self):
         # init_coords = self.trajectory_points[0][: self.n_links]
-        init_coords = self.goal_pos[: self.n_links]
-        init_vel = np.array([0] * init_coords.shape[0])
+        init_coords = np.random.uniform(low=np.pi / 10, high=4 * np.pi / 7, size=(1,))
+        init_vel = np.random.uniform(low=-8, high=8, size=(1,))
         init_state = np.concatenate((init_coords, init_vel))
         self.state = init_state
         self.cur_step = 0
