@@ -103,10 +103,8 @@ class CriticNetwork(nn.Module):
 
     def forward(self, state, action):
         state_value = self.fc1(state)
-        state_value = self.bn1(state_value)
         state_value = F.relu(state_value)
         state_value = self.fc2(state_value)
-        state_value = self.bn2(state_value)
 
         action_value = F.relu(self.action_value(action))
         state_action_value = F.relu(T.add(state_value, action_value))
@@ -164,10 +162,8 @@ class ActorNetwork(nn.Module):
 
     def forward(self, state):
         x = self.fc1(state)
-        x = self.bn1(x)
         x = F.relu(x)
         x = self.fc2(x)
-        x = self.bn2(x)
         x = F.relu(x)
         x = T.tanh(self.mu(x))
 

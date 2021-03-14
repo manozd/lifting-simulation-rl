@@ -66,60 +66,50 @@ class LinkageEnv(gym.Env):
         print("action_space: ", self.action_space)
         self.cur_step = 0
 
-        # self.trajectory_points = get_coordinates(path)
-        # num_frames = self.trajectory_points.shape[0]
-        # self.trajectory_timestamps = np.array(
-        #     [i * 1.0 / w_params["VIDEO_FPS"] for i in range(num_frames)]
-        # )
+        self.trajectory_points = get_coordinates(path)
+        num_frames = self.trajectory_points.shape[0]
+        self.trajectory_timestamps = np.array(
+            [i * 1.0 / w_params["VIDEO_FPS"] for i in range(num_frames)]
+        )
 
         self.time_step = w_params["TIME_STEP"]
-        # end_time = round(num_frames / w_params["VIDEO_FPS"], 2)
+        end_time = round(num_frames / w_params["VIDEO_FPS"], 2)
 
-        # self.interpolated_trajectory = get_interpolated(
-        #     self.trajectory_points, self.trajectory_timestamps
-        # )
-        # timestamps = [
-        #     np.float32(i * self.time_step)
-        #     for i in range(int(end_time // self.time_step))
-        # ]
+        self.interpolated_trajectory = get_interpolated(
+            self.trajectory_points, self.trajectory_timestamps
+        )
+        timestamps = [
+            np.float32(i * self.time_step)
+            for i in range(int(end_time // self.time_step))
+        ]
 
-        # coordinates = [
-        #     [
-        #         self.interpolated_trajectory[i](t)
-        #         for i in range(len(self.interpolated_trajectory))
-        #     ]
-        #     for t in timestamps
-        # ]
+        self.coordinates = [
+            [
+                self.interpolated_trajectory[i](t)
+                for i in range(len(self.interpolated_trajectory))
+            ]
+            for t in timestamps
+        ]
 
-        # self.coordinates = np.array(
-        #     [self._transform_state(step_coord) for step_coord in coordinates],
-        #     dtype=np.float32,
-        # )
-
-        # self.coordinates = []
-        # for t in timestamps:
-        #     t_coords = []
-        #     for i in range(len(self.interpolated_trajectory)):
-        #         x = np.cos(self.interpolated_trajectory[i](t))
-        #         y = np.sin(self.interpolated_trajectory[i](t))
-        #         t_coords.extend([x, y])
-        #     self.coordinates.append(t_coords)
 
         self.param_vals = w_params["PARAM_VALS"]
+        self.init_state = w_params["INIT_STATE"]
         self.goal_pos = w_params["GOAL_POS"]
         self.act_max = w_params["ACT_HIGH"]
+        self.speed_max = w_params["OBS_HIGH"][self.n_links]
         self.u = None
         self.verbose = verbose
+        self.success_step = 0
         self.reset()
 
     def reset(self):
-        # init_coords = self.trajectory_points[0][: self.n_links]
-        init_coords = self.goal_pos[: self.n_links]
+        init_coords = self.trajectory_points[0][: self.n_links]
         init_vel = np.array([0] * init_coords.shape[0])
         init_state = np.concatenate((init_coords, init_vel))
         self.state = init_state
         self.cur_step = 0
-        return self.state
+        self.success_step = 0
+        return self._get_obs()
 
     def step(self, u):
         self.u = u * self.act_max
@@ -135,14 +125,28 @@ class LinkageEnv(gym.Env):
             print(f"\t control = {u}")
 
         self.state = odeint(self._rhs, state0, t, args=(self.param_vals,))[-1]
+        w = np.clip(self.state[self.n_links:], -self.speed_max, self.speed_max)
+        self.state[self.n_links:] = w
         self.cur_step += 1
+        
+        reference_move_vector_1 = self._xy(self.coordinates[self.cur_step][0], 0.4) - self._xy(self.coordinates[self.cur_step - 1][0], 0.4)
+        imitation_move_vector_1 = self._xy(self.state[0], 0.4) - self._xy(state0[0], 0.4)
+        
+        delta = np.array([0.02] * self.n_links)
+        high = self.coordinates[self.cur_step][:self.n_links] + delta
+        low = self.coordinates[self.cur_step][:self.n_links] - delta
+        pos_reward = 0
 
-        pos_reward = (
-            -sum(abs(self.state[: self.n_links] - self.goal_pos[: self.n_links])) ** 2
-        )
-        speed_reward = -sum(abs(self.state[self.n_links :])) ** 2
+        is_on_trajectory = np.all(self.state[:self.n_links] >= low) and np.all(self.state[:self.n_links] <= high) and self.success_step == self.cur_step - 1
+        if is_on_trajectory:
+            self.success_step += 1
+        
+
+        dot_product = np.dot(imitation_move_vector_1, reference_move_vector_1)
+        dot_product_reward = np.exp(np.power(dot_product,1/4)) if dot_product > 0 else -2 
+        speed_reward = sum(abs(self.state[self.n_links :])) ** 2
         control_reward = -sum(abs(self.u)) ** 2
-        reward = (pos_reward + 0.1 * speed_reward + 0.001 * control_reward) / 288
+        reward = 1.64 + (pos_reward + dot_product_reward + 0.01 * control_reward)
         if self.verbose:
             print(f"\t after state = {self.state}")
             print(f"\t after trj = {self.coordinates[next_step]}")
@@ -152,14 +156,19 @@ class LinkageEnv(gym.Env):
 
         is_end = self.cur_step == 288
 
-        terminate = is_end
-
+        terminate = self._is_out_of_bounds() or is_end
+        if self._is_out_of_bounds():
+            reward -= 100
         if terminate and self.verbose:
             print("*" * 50)
             print("*****" + "TERMINATE" + "*****")
             print("*" * 50)
-        return self.state, reward, terminate, {}
+        return self._get_obs(), reward, terminate, {}
 
+    def _get_obs(self):
+        theta, thetadot = self.state
+        return np.array([np.cos(theta), np.sin(theta), thetadot])
+    
     def _is_out_of_bounds(self):
         return not self.observation_space.contains(self.state)
 
@@ -211,6 +220,9 @@ class LinkageEnv(gym.Env):
             circ.add_attr(jtransform)
 
         return self.viewer.render(return_rgb_array=mode == "rgb_array")
+
+    def _xy(self, q, l):
+        return np.array([l*np.cos(q), l*np.sin(q)], dtype=np.float32)
 
     def close(self):
         if self.viewer:

@@ -1,4 +1,5 @@
 from sympy import symbols
+from sympy import latex
 from sympy.physics.mechanics import *
 from sympy import Dummy, lambdify
 
@@ -20,7 +21,7 @@ def kane(n=5, mode="rigid_body", hands_load=False):
     for i in range(n):
         RFi = N.orientnew("RF" + str(i), "Axis", [q[i], N.z])
         RFi.set_ang_vel(N, sum(u[: i + 1]) * N.z)
-
+        print(latex(RFi.ang_vel_in(N)))
         if not points:
             Pi = Point("P" + str(i))
             Pi.set_vel(N, 0)
@@ -28,8 +29,11 @@ def kane(n=5, mode="rigid_body", hands_load=False):
             Pi = points[-1].locatenew("P" + str(i), l[i - 1] * frames[-1].x)
         points.append(Pi)
         frames.append(RFi)
-        Pcmi = Pi.locatenew("Pcm" + str(i), l[i] / 2 * RFi.x)
+        Pcmi = Pi.locatenew("Pcm" + str(i), (l[i] / 2) * RFi.x)
         Pcmi.v2pt_theory(Pi, N, RFi)
+        
+        print(latex(Pcmi.vel(N).simplify()))
+        print("------------------")
         if mode == "particle":
             obj = Particle("Pa" + str(i), Pcmi, m[i])
 
