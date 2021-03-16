@@ -49,12 +49,6 @@ class LinkageEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=w_params["OBS_LOW"], high=w_params["OBS_HIGH"], dtype=np.float32
         )
-
-        self.observation_space = spaces.Box(
-            low=w_params["OBS_LOW"],
-            high=w_params["OBS_HIGH"],
-            dtype=np.float32,
-        )
         print("observation_space: ", self.observation_space)
 
         self.action_space = spaces.Box(
@@ -106,23 +100,29 @@ class LinkageEnv(gym.Env):
         #     self.coordinates.append(t_coords)
 
         self.param_vals = w_params["PARAM_VALS"]
-        self.goal_pos = w_params["GOAL_POS"]
+        self.goal_pos = np.random.uniform(low=np.pi/10, high=4*np.pi/7, size=(2,))
         self.act_max = w_params["ACT_HIGH"]
         self.u = None
+        self.prev_pos_reward = 0
         self.verbose = verbose
+        self.speed_max = w_params["OBS_HIGH"][self.n_links]
         self.reset()
 
     def reset(self):
         # init_coords = self.trajectory_points[0][: self.n_links]
-        init_coords = np.random.uniform(low=np.pi / 10, high=4 * np.pi / 7, size=(1,))
-        init_vel = np.random.uniform(low=-8, high=8, size=(1,))
+        init_coords = np.random.uniform(low=np.pi / 10, high=4 * np.pi / 7, size=(2,))
+        init_vel = np.random.uniform(low=-8, high=8, size=(2,))
         init_state = np.concatenate((init_coords, init_vel))
         self.state = init_state
+        self.prev_pos_reward = 0
+        self.goal_pos = np.random.uniform(low=np.pi/10, high=4*np.pi/7, size=(2,))
         self.cur_step = 0
-        return self.state
+        return self._get_obs()
 
     def step(self, u):
+        print(u)
         self.u = u * self.act_max
+        print(u)
         t = np.linspace(0, self.time_step, 2)
         next_step = self.cur_step + 1
         state0 = self.state
@@ -135,14 +135,15 @@ class LinkageEnv(gym.Env):
             print(f"\t control = {u}")
 
         self.state = odeint(self._rhs, state0, t, args=(self.param_vals,))[-1]
+        w = np.clip(self.state[self.n_links:], -self.speed_max, self.speed_max)
+        self.state[self.n_links:] = w
         self.cur_step += 1
 
-        pos_reward = (
-            -sum(abs(self.state[: self.n_links] - self.goal_pos[: self.n_links])) ** 2
-        )
+        pos_reward = - sum(abs(self.state[: self.n_links] - self.goal_pos[: self.n_links])) ** 2
         speed_reward = -sum(abs(self.state[self.n_links :])) ** 2
         control_reward = -sum(abs(self.u)) ** 2
-        reward = (pos_reward + 0.1 * speed_reward + 0.001 * control_reward) / 288
+        reward = pos_reward
+        self.prev_pos_reward = pos_reward
         if self.verbose:
             print(f"\t after state = {self.state}")
             print(f"\t after trj = {self.coordinates[next_step]}")
@@ -152,13 +153,18 @@ class LinkageEnv(gym.Env):
 
         is_end = self.cur_step == 288
 
-        terminate = is_end
+        terminate = self._is_out_of_bounds() or is_end or self._goal_reached()
+        if self._is_out_of_bounds():
+            reward = -100
+        
+        if self._goal_reached():
+            reward += 100
 
         if terminate and self.verbose:
             print("*" * 50)
             print("*****" + "TERMINATE" + "*****")
             print("*" * 50)
-        return self.state, reward, terminate, {}
+        return self._get_obs(), reward, terminate, {}
 
     def _is_out_of_bounds(self):
         return not self.observation_space.contains(self.state)
@@ -167,6 +173,13 @@ class LinkageEnv(gym.Env):
         return np.array(
             [coord / np.sqrt(sum(vector ** 2)) for coord in vector], dtype=np.float32
         )
+
+    def _goal_reached(self):
+        return sum(abs(self.state[: self.n_links] - self.goal_pos[: self.n_links])) < 0.04
+
+    def _get_obs(self):
+        theta1, theta2, thetadot1, thetadot2 = self.state
+        return np.array([np.cos(theta1), np.sin(theta1), np.cos(theta2), np.sin(theta2), np.cos(self.goal_pos[0]), np.sin(self.goal_pos[0]), np.cos(self.goal_pos[1]), np.sin(self.goal_pos[1]),   thetadot1, thetadot2])
 
     def _rhs(self, x, t, args):
         arguments = np.hstack((x, self.u, args))
@@ -179,7 +192,7 @@ class LinkageEnv(gym.Env):
         from gym.envs.classic_control import rendering
 
         s = self.state
-
+        g = self.goal_pos
         if self.viewer is None:
             self.viewer = rendering.Viewer(400, 400)
             bound = 0.4 + 0.4 + 0.2  # 2.2 for default
@@ -188,24 +201,41 @@ class LinkageEnv(gym.Env):
         if s is None:
             return None
 
-        p1 = [0.4 * np.cos(s[0]), 0.4 * np.sin(s[0])]
+        p1_1 = [0.4 * np.cos(s[0]), 0.4 * np.sin(s[0])]
+        p2_1 = [p1_1[0] + 0.4 * np.cos(s[0]), p1_1[1] + 0.4 * np.sin(s[0])]
 
-        # p2 = [p1[0] + 0.4 * np.cos(s[1]), p1[1] + 0.4 * np.sin(s[1])]
 
-        xys = np.array([[0, 0], p1])
-        # thetas = [s[0] % (2 * np.pi), (s[1]) % (2 * np.pi)]
-        thetas = [s[0] % (2 * np.pi)]
+        p1_2 = [0.4 * np.cos(g[0]), 0.4 * np.sin(g[0])]
+        p2_2 = [p1_2[0] + 0.4 * np.cos(g[0]), p1_2[1] + 0.4 * np.sin(g[0])]
 
-        # link_lengths = [0.4, 0.4]
-        link_lengths = [0.4]
+
+        xys_1 = np.array([[0, 0], p1_1, p2_1])
+        thetas_1 = [s[0] % (2 * np.pi),  (s[0]+ s[1])%(2*np.pi)]
+        link_lengths_1 = [0.4, 0.4]
+
+        xys_2 = np.array([[0, 0], p1_2, p2_2])
+        thetas_2 = [g[0] % (2 * np.pi),  (g[0]+ g[1])%(2*np.pi)]
+        link_lengths_2 = [0.4, 0.4]
+
 
         self.viewer.draw_line((-2.2, 1), (2.2, 1))
-        for ((x, y), th, llen) in zip(xys, thetas, link_lengths):
+
+        for ((x, y), th, llen) in zip(xys_1, thetas_1, link_lengths_1):
             l, r, t, b = 0, llen, 0.05, -0.05
             jtransform = rendering.Transform(rotation=th, translation=(x, y))
             link = self.viewer.draw_polygon([(l, b), (l, t), (r, t), (r, b)])
             link.add_attr(jtransform)
             link.set_color(0.8, 0.3, 0.3)
+            circ = self.viewer.draw_circle(0.05)
+            circ.set_color(0.0, 0.0, 0)
+            circ.add_attr(jtransform)
+
+        for ((x, y), th, llen) in zip(xys_2, thetas_2, link_lengths_2):
+            l, r, t, b = 0, llen, 0.05, -0.05
+            jtransform = rendering.Transform(rotation=th, translation=(x, y))
+            link = self.viewer.draw_polygon([(l, b), (l, t), (r, t), (r, b)])
+            link.add_attr(jtransform)
+            link.set_color(0.6, 0.6, 0.2)
             circ = self.viewer.draw_circle(0.05)
             circ.set_color(0.0, 0.0, 0)
             circ.add_attr(jtransform)
