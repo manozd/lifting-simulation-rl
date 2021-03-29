@@ -9,120 +9,57 @@ from lifting_rl.n_linkage import kane
 from scipy import interpolate
 
 
-def get_coordinates(path):
-    coordinates = []
-    with open(path) as fr:
-        reader = csv.reader(fr)
-        for idx, row in enumerate(reader):
-            coordinates.append([float(i) for i in row])
-    return np.array(coordinates)
-
-
-def get_interpolated(coords, timestamps, mode="spline"):
-    interpolated_coords = []
-    for i in range(coords.shape[1]):
-        if mode == "default":
-            y = coords[:, i]
-            f = interpolate.interp1d(timestamps, y)
-        if mode == "spline":
-            y = coords[:, i]
-
-            def f(x, y=y):
-                tck = interpolate.splrep(timestamps, y)
-                return np.float32(interpolate.splev(x, tck))
-
-        interpolated_coords.append(f)
-    return interpolated_coords
-
-
 class LinkageEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
-
     def __init__(self, path: str, w_params: dict, verbose: bool = False):
-        self.viewer = None
-        self.n_links = w_params["N_LINKS"]
-
         M, F, m_params = kane(n=w_params["N_LINKS"])
         self.M_func = lambdify(m_params, M)
         self.F_func = lambdify(m_params, F)
 
+        high_speed = np.full((w_params["N_LINKS"],), w_params["SPEED_LIMIT"])
+        
+        
+        self.low = np.array([1.19, np.pi/2, 0.2, -1.8, -1.26, -8, -8, -8, -8, -8], dtype=np.float32)
+        self.high = np.array([np.pi/2, 2.56, np.pi/2, -1.4, -1, 8, 8, 8, 8, 8], dtype=np.float32)
+        low = np.concatenate((w_params["OBS_LOW"], -high_speed))
+        high = np.concatenate((w_params["OBS_HIGH"], high_speed))
         self.observation_space = spaces.Box(
-            low=w_params["OBS_LOW"], high=w_params["OBS_HIGH"], dtype=np.float32
-        )
-
-        self.observation_space = spaces.Box(
-            low=w_params["OBS_LOW"],
-            high=w_params["OBS_HIGH"],
-            dtype=np.float32,
+            low=low, high=high, dtype=np.float32
         )
         print("observation_space: ", self.observation_space)
-
         self.action_space = spaces.Box(
-            low=w_params["ACT_LOW"],
-            high=w_params["ACT_HIGH"],
+            low=-w_params["ACT_LIMIT"],
+            high=w_params["ACT_LIMIT"],
             shape=(w_params["N_LINKS"],),
             dtype=np.float32,
         )
         print("action_space: ", self.action_space)
-        self.cur_step = 0
 
-        # self.trajectory_points = get_coordinates(path)
-        # num_frames = self.trajectory_points.shape[0]
-        # self.trajectory_timestamps = np.array(
-        #     [i * 1.0 / w_params["VIDEO_FPS"] for i in range(num_frames)]
-        # )
+        self.verbose = verbose
 
         self.time_step = w_params["TIME_STEP"]
-        # end_time = round(num_frames / w_params["VIDEO_FPS"], 2)
+        self.nlinks = w_params["N_LINKS"]
+        self.act_limit = w_params["ACT_LIMIT"]
+        self.speed_limit = w_params["SPEED_LIMIT"]
 
-        # self.interpolated_trajectory = get_interpolated(
-        #     self.trajectory_points, self.trajectory_timestamps
-        # )
-        # timestamps = [
-        #     np.float32(i * self.time_step)
-        #     for i in range(int(end_time // self.time_step))
-        # ]
+        self.llength = 0.4
+        self.lmass = 1
 
-        # coordinates = [
-        #     [
-        #         self.interpolated_trajectory[i](t)
-        #         for i in range(len(self.interpolated_trajectory))
-        #     ]
-        #     for t in timestamps
-        # ]
+        self.param_vals = [w_params["PARAM_VALS"][0], 0.4, 1, 0.4, 1, 0.4, 1, 0.4, 1, 0.4, 1]
 
-        # self.coordinates = np.array(
-        #     [self._transform_state(step_coord) for step_coord in coordinates],
-        #     dtype=np.float32,
-        # )
-
-        # self.coordinates = []
-        # for t in timestamps:
-        #     t_coords = []
-        #     for i in range(len(self.interpolated_trajectory)):
-        #         x = np.cos(self.interpolated_trajectory[i](t))
-        #         y = np.sin(self.interpolated_trajectory[i](t))
-        #         t_coords.extend([x, y])
-        #     self.coordinates.append(t_coords)
-
-        self.param_vals = w_params["PARAM_VALS"]
-        self.goal_pos = w_params["GOAL_POS"]
-        self.act_max = w_params["ACT_HIGH"]
+        self.gpos = None
         self.u = None
-        self.verbose = verbose
+        self.viewer = None
         self.reset()
 
     def reset(self):
-        # init_coords = self.trajectory_points[0][: self.n_links]
-        init_coords = self.goal_pos[: self.n_links]
-        init_vel = np.array([0] * init_coords.shape[0])
-        init_state = np.concatenate((init_coords, init_vel))
-        self.state = init_state
+        self.state = np.random.uniform(low=self.low, high=self.high)
+        self.gpos = np.random.uniform(low=self.low[:self.nlinks], high=self.high[:self.nlinks])
         self.cur_step = 0
-        return self.state
+        return self._get_obs()
 
     def step(self, u):
-        self.u = u * self.act_max
+        self.u = u * self.act_limit
         t = np.linspace(0, self.time_step, 2)
         next_step = self.cur_step + 1
         state0 = self.state
@@ -135,14 +72,15 @@ class LinkageEnv(gym.Env):
             print(f"\t control = {u}")
 
         self.state = odeint(self._rhs, state0, t, args=(self.param_vals,))[-1]
+        self.state[self.nlinks:] = np.clip(self.state[self.nlinks:], -self.speed_limit, self.speed_limit)
         self.cur_step += 1
 
-        pos_reward = (
-            -sum(abs(self.state[: self.n_links] - self.goal_pos[: self.n_links])) ** 2
-        )
-        speed_reward = -sum(abs(self.state[self.n_links :])) ** 2
-        control_reward = -sum(abs(self.u)) ** 2
-        reward = (pos_reward + 0.1 * speed_reward + 0.001 * control_reward) / 288
+        pos_reward = -sum(abs(self.state[:self.nlinks] - self.gpos) ** 2 - abs(self.state[:self.nlinks] - self.gpos)) ** 2
+        speed_reward = -sum(abs(self.state[self.nlinks:] / 8))
+        control_reward = -sum(abs(self.u / 100))
+        goal_reached = sum(abs(self.state[: self.nlinks] - self.gpos[: self.nlinks])) ** 2 < 0.1
+        reward = 10*pos_reward
+
         if self.verbose:
             print(f"\t after state = {self.state}")
             print(f"\t after trj = {self.coordinates[next_step]}")
@@ -152,13 +90,18 @@ class LinkageEnv(gym.Env):
 
         is_end = self.cur_step == 288
 
-        terminate = is_end
+        terminate = self._is_out_of_bounds() or is_end
+        if self._is_out_of_bounds():
+            reward = -5000
+        
+        if goal_reached:
+            reward += 100
 
         if terminate and self.verbose:
             print("*" * 50)
             print("*****" + "TERMINATE" + "*****")
             print("*" * 50)
-        return self.state, reward, terminate, {}
+        return self._get_obs(), reward, terminate, {}
 
     def _is_out_of_bounds(self):
         return not self.observation_space.contains(self.state)
@@ -167,6 +110,11 @@ class LinkageEnv(gym.Env):
         return np.array(
             [coord / np.sqrt(sum(vector ** 2)) for coord in vector], dtype=np.float32
         )
+
+    def _get_obs(self):
+        coords = self.state[:self.nlinks]
+        speed = self.state[self.nlinks:]
+        return np.hstack((np.sin(coords), np.cos(coords), np.sin(self.gpos), np.cos(self.gpos), speed))
 
     def _rhs(self, x, t, args):
         arguments = np.hstack((x, self.u, args))
@@ -178,35 +126,46 @@ class LinkageEnv(gym.Env):
     def render(self, mode="human"):
         from gym.envs.classic_control import rendering
 
-        s = self.state
-
         if self.viewer is None:
-            self.viewer = rendering.Viewer(400, 400)
-            bound = 0.4 + 0.4 + 0.2  # 2.2 for default
-            self.viewer.set_bounds(-bound, bound, -bound, bound)
+            self.viewer = rendering.Viewer(600, 400)
+            bound = 1.5  # 2.2 for default
+            self.viewer.set_bounds(-bound, bound, -0.5, bound)
 
-        if s is None:
-            return None
+        lpoints = [[0, 0]]
+        for i in range(self.nlinks):
+            pcos = lpoints[-1][0] + self.llength * np.cos(self.state[i])
+            psin = lpoints[-1][1] + self.llength * np.sin(self.state[i])
+            lpoints.append([pcos, psin])
 
-        p1 = [0.4 * np.cos(s[0]), 0.4 * np.sin(s[0])]
+        gpoints = [[0, 0]]
+        for i in range(self.nlinks):
+            pcos = gpoints[-1][0] + self.llength * np.cos(self.gpos[i])
+            psin = gpoints[-1][1] + self.llength * np.sin(self.gpos[i])
+            gpoints.append([pcos, psin])
 
-        # p2 = [p1[0] + 0.4 * np.cos(s[1]), p1[1] + 0.4 * np.sin(s[1])]
+        llengths = [self.llength for i in range(self.nlinks)]
 
-        xys = np.array([[0, 0], p1])
-        # thetas = [s[0] % (2 * np.pi), (s[1]) % (2 * np.pi)]
-        thetas = [s[0] % (2 * np.pi)]
+        lthetas = self.state[:self.nlinks] % (2*np.pi)
+        gthetas = self.gpos % (2*np.pi)
 
-        # link_lengths = [0.4, 0.4]
-        link_lengths = [0.4]
 
-        self.viewer.draw_line((-2.2, 1), (2.2, 1))
-        for ((x, y), th, llen) in zip(xys, thetas, link_lengths):
-            l, r, t, b = 0, llen, 0.05, -0.05
+        for ((x, y), th, llen) in zip(gpoints, gthetas, llengths):
+            l, r, t, b = 0, llen, 0.02, -0.02
+            jtransform = rendering.Transform(rotation=th, translation=(x, y))
+            link = self.viewer.draw_polygon([(l, b), (l, t), (r, t), (r, b)])
+            link.add_attr(jtransform)
+            link.set_color(0.8, 0.8, 0.8)
+            circ = self.viewer.draw_circle(0.02)
+            circ.set_color(0.0, 0.0, 0)
+            circ.add_attr(jtransform)
+
+        for ((x, y), th, llen) in zip(lpoints, lthetas, llengths):
+            l, r, t, b = 0, llen, 0.04, -0.04
             jtransform = rendering.Transform(rotation=th, translation=(x, y))
             link = self.viewer.draw_polygon([(l, b), (l, t), (r, t), (r, b)])
             link.add_attr(jtransform)
             link.set_color(0.8, 0.3, 0.3)
-            circ = self.viewer.draw_circle(0.05)
+            circ = self.viewer.draw_circle(0.04)
             circ.set_color(0.0, 0.0, 0)
             circ.add_attr(jtransform)
 
