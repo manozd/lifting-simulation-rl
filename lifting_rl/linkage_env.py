@@ -11,7 +11,7 @@ from scipy import interpolate
 
 class LinkageEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
-    def __init__(self, path: str, w_params: dict, verbose: bool = False):
+    def __init__(self, w_params: dict, verbose: bool = False):
         M, F, m_params = kane(n=w_params["N_LINKS"])
         self.M_func = lambdify(m_params, M)
         self.F_func = lambdify(m_params, F)
