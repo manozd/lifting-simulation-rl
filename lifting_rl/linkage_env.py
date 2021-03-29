@@ -42,10 +42,10 @@ class LinkageEnv(gym.Env):
         self.act_limit = w_params["ACT_LIMIT"]
         self.speed_limit = w_params["SPEED_LIMIT"]
 
-        self.llength = 0.4
-        self.lmass = 1
+        self.llengths = [0.4, 0.4, 0.6, 0.4, 0.4] 
+        self.lmasses = [5.1294, 8.715, 45.733, 6.8558, 4.7891]
 
-        self.param_vals = [w_params["PARAM_VALS"][0], 0.4, 1, 0.4, 1, 0.4, 1, 0.4, 1, 0.4, 1]
+        self.param_vals = [w_params["PARAM_VALS"][0], 0.4, 5.1294, 0.4, 8.715, 0.4, 45.733, 0.4, 6.8558, 0.4, 4.7891]
 
         self.gpos = None
         self.u = None
@@ -127,29 +127,34 @@ class LinkageEnv(gym.Env):
         from gym.envs.classic_control import rendering
 
         if self.viewer is None:
-            self.viewer = rendering.Viewer(600, 400)
+            self.viewer = rendering.Viewer(600, 600)
             bound = 1.5  # 2.2 for default
-            self.viewer.set_bounds(-bound, bound, -0.5, bound)
+            self.viewer.set_bounds(-1, 1, -0.5, 1.8)
 
         lpoints = [[0, 0]]
         for i in range(self.nlinks):
-            pcos = lpoints[-1][0] + self.llength * np.cos(self.state[i])
-            psin = lpoints[-1][1] + self.llength * np.sin(self.state[i])
+            a = 1
+            if i == 2:
+                a = 2/3
+            pcos = lpoints[-1][0] + self.llengths[i] * a * np.cos(self.state[i])
+            psin = lpoints[-1][1] + self.llengths[i] * a * np.sin(self.state[i])
             lpoints.append([pcos, psin])
 
         gpoints = [[0, 0]]
         for i in range(self.nlinks):
-            pcos = gpoints[-1][0] + self.llength * np.cos(self.gpos[i])
-            psin = gpoints[-1][1] + self.llength * np.sin(self.gpos[i])
+            a = 1
+            if i == 2:
+                a = 2/3
+            pcos = gpoints[-1][0] + self.llengths[i] * a * np.cos(self.gpos[i])
+            psin = gpoints[-1][1] + self.llengths[i] * a * np.sin(self.gpos[i])
             gpoints.append([pcos, psin])
 
-        llengths = [self.llength for i in range(self.nlinks)]
-
+        
         lthetas = self.state[:self.nlinks] % (2*np.pi)
         gthetas = self.gpos % (2*np.pi)
 
 
-        for ((x, y), th, llen) in zip(gpoints, gthetas, llengths):
+        for idx, ((x, y), th, llen) in enumerate(zip(gpoints, gthetas, self.llengths)):
             l, r, t, b = 0, llen, 0.02, -0.02
             jtransform = rendering.Transform(rotation=th, translation=(x, y))
             link = self.viewer.draw_polygon([(l, b), (l, t), (r, t), (r, b)])
@@ -159,7 +164,7 @@ class LinkageEnv(gym.Env):
             circ.set_color(0.0, 0.0, 0)
             circ.add_attr(jtransform)
 
-        for ((x, y), th, llen) in zip(lpoints, lthetas, llengths):
+        for idx, ((x, y), th, llen) in enumerate(zip(lpoints, lthetas, self.llengths)):
             l, r, t, b = 0, llen, 0.04, -0.04
             jtransform = rendering.Transform(rotation=th, translation=(x, y))
             link = self.viewer.draw_polygon([(l, b), (l, t), (r, t), (r, b)])
