@@ -1,0 +1,12 @@
+name: rl_env
+dependencies:
+  - python=3.7
+  - sympy
+  - scipy
+  - tensorflow=1.13.1
+  - keras=2.2.4
+  - jupyter
+  - tqdm
+  - pip:
+        - gym
+        - keras-rl
