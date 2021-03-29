@@ -58,6 +58,13 @@ class LinkageEnv(gym.Env):
         self.cur_step = 0
         return self._get_obs()
 
+    def inference_reset(self, state, gpos):
+        self.state = state
+        self.gpos = gpos
+        self.cur_step = 0
+        return self._get_obs()
+
+
     def step(self, u):
         self.u = u * self.act_limit
         t = np.linspace(0, self.time_step, 2)
