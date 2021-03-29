@@ -76,7 +76,7 @@ class CriticNetwork(nn.Module):
         self.fc1_dims = fc1_dims
         self.fc2_dims = fc2_dims
         self.n_actions = n_actions
-        self.checkpoint_file = os.path.join(chkpt_dir, name + "_ddpg")
+        self.checkpoint_file = os.path.join(chkpt_dir, name + ".pt")
 
         self.fc1 = nn.Linear(*self.input_dims, self.fc1_dims)
         f1 = 1 / np.sqrt(self.fc1.weight.data.size()[0])
@@ -139,7 +139,7 @@ class ActorNetwork(nn.Module):
         self.n_actions = n_actions
         self.fc1_dims = fc1_dims
         self.fc2_dims = fc2_dims
-        self.checkpoint_file = os.path.join(chkpt_dir, name + "_ddpg")
+        self.checkpoint_file = os.path.join(chkpt_dir, name + ".pt")
 
         self.fc1 = nn.Linear(*self.input_dims, self.fc1_dims)
         f1 = 1 / np.sqrt(self.fc1.weight.data.size()[0])
@@ -332,7 +332,7 @@ class Agent(object):
         self.target_actor.save_checkpoint()
         self.target_critic.save_checkpoint()
 
-    def save_models(self):
+    def load_models(self):
         self.actor.load_checkpoint()
         self.critic.load_checkpoint()
         self.target_actor.load_checkpoint()
