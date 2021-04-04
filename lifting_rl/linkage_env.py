@@ -82,10 +82,9 @@ class LinkageEnv(gym.Env):
         self.state[self.nlinks:] = np.clip(self.state[self.nlinks:], -self.speed_limit, self.speed_limit)
         self.cur_step += 1
 
-        pos_reward = -sum(abs(self.state[:self.nlinks] - self.gpos) ** 2 - abs(self.state[:self.nlinks] - self.gpos)) ** 2
+        pos_reward = -sum(abs(self.state[:self.nlinks] - self.gpos) ** 2) 
         speed_reward = -sum(abs(self.state[self.nlinks:] / 8))
         control_reward = -sum(abs(self.u / 100))
-        goal_reached = sum(abs(self.state[: self.nlinks] - self.gpos[: self.nlinks])) ** 2 < 0.1
         reward = 10*pos_reward
 
         if self.verbose:
@@ -101,7 +100,7 @@ class LinkageEnv(gym.Env):
         if self._is_out_of_bounds():
             reward = -5000
         
-        if goal_reached:
+        if self._goal_reached():
             reward += 100
 
         if terminate and self.verbose:
@@ -112,6 +111,9 @@ class LinkageEnv(gym.Env):
 
     def _is_out_of_bounds(self):
         return not self.observation_space.contains(self.state)
+
+    def _goal_reached(self):
+        return sum(abs(self.state[: self.nlinks] - self.gpos[: self.nlinks]) ** 2)  < 0.1
 
     def _normalize(self, vector, max):
         return np.array(
