@@ -30,7 +30,7 @@ def kane(n=5, mode="rigid_body", hands_load=False):
         # Add head
         if i == 2:
             P_h = points[-1].locatenew("P_h", 1.3 * l[i] * RFi.x)
-            loads.append((P_h, -g * N.y))
+            loads.append((P_h, -6 * g * N.y))
 
         frames.append(RFi)
         Pcmi = Pi.locatenew("Pcm" + str(i), l[i] / 2 * RFi.x)
@@ -55,7 +55,7 @@ def kane(n=5, mode="rigid_body", hands_load=False):
 
     if hands_load:
         P5 = points[-1].locatenew("P5", l[-1] * frames[-1].x)
-        loads.append((P5, -5 * g * N.y))
+        loads.append((P5, -10 * g * N.y))
 
     km = KanesMethod(N, q_ind=q, u_ind=u, kd_eqs=kindiffs)
     fr, frstar = km.kanes_equations(phys_objs, loads=loads)
