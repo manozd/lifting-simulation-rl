@@ -19,7 +19,7 @@ class LinkageEnv(gym.Env):
         M, F, m_params = kane(n=w_params["N_LINKS"], hands_load=True)
         self.M_func_hl = lambdify(m_params, M)
         self.F_func_hl = lambdify(m_params, F)
-        
+
         high_speed = np.full((w_params["N_LINKS"],), w_params["SPEED_LIMIT"])
         
         
@@ -61,9 +61,9 @@ class LinkageEnv(gym.Env):
         self.gpos = np.random.uniform(low=self.low[:self.nlinks], high=self.high[:self.nlinks])
         self.cur_step = 0
 
-        i = np.random.choice(2)
-        self.M_func = [self.M_func_nhl, self.M_func_nhl][i]
-        self.F_func = [self.F_func_hl, self.F_func_hl][i]
+        self.hl = np.random.choice(2)
+        self.M_func = [self.M_func_nhl, self.M_func_nhl][self.hl]
+        self.F_func = [self.F_func_hl, self.F_func_hl][self.hl]
         np.append(self.state, i)
         
         return self._get_obs()
@@ -180,7 +180,7 @@ class LinkageEnv(gym.Env):
     def _get_obs(self):
         coords = self.state[:self.nlinks]
         speed = self.state[self.nlinks:]
-        return np.hstack((np.sin(coords), np.cos(coords), np.sin(self.gpos), np.cos(self.gpos), speed))
+        return np.hstack((np.sin(coords), np.cos(coords), np.sin(self.gpos), np.cos(self.gpos), speed, self.hl))
 
     def _rhs(self, x, t, args):
         arguments = np.hstack((x, self.u, args))
