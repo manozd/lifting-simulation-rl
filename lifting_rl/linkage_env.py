@@ -62,9 +62,9 @@ class LinkageEnv(gym.Env):
         self.cur_step = 0
 
         self.hl = np.random.choice(2)
-        self.M_func = [self.M_func_nhl, self.M_func_nhl][self.hl]
-        self.F_func = [self.F_func_hl, self.F_func_hl][self.hl]
-        np.append(self.state, i)
+        self.M_func = [self.M_func_nhl, self.M_func_hl][self.hl]
+        self.F_func = [self.F_func_nhl, self.F_func_hl][self.hl]
+        np.append(self.state, self.hl)
         
         return self._get_obs()
 
@@ -170,7 +170,7 @@ class LinkageEnv(gym.Env):
         return not self.observation_space.contains(self.state)
 
     def _goal_reached(self):
-        return sum(abs(self.state[: self.nlinks] - self.gpos[: self.nlinks]) ** 2)  < 0.2
+        return sum(abs(self.state[: self.nlinks] - self.gpos[: self.nlinks]) ** 2)  < 0.1
 
     def _normalize(self, vector, max):
         return np.array(
