@@ -11,10 +11,14 @@ from scipy import interpolate
 
 class LinkageEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
-    def __init__(self, path: str, w_params: dict, verbose: bool = False):
-        M, F, m_params = kane(n=w_params["N_LINKS"])
-        self.M_func = lambdify(m_params, M)
-        self.F_func = lambdify(m_params, F)
+    def __init__(self, w_params: dict, verbose: bool = False):
+        M, F, m_params = kane(n=w_params["N_LINKS"], hands_load=False)
+        self.M_func_nhl = lambdify(m_params, M)
+        self.F_func_nhl = lambdify(m_params, F)
+
+        M, F, m_params = kane(n=w_params["N_LINKS"], hands_load=True)
+        self.M_func_hl = lambdify(m_params, M)
+        self.F_func_hl = lambdify(m_params, F)
 
         high_speed = np.full((w_params["N_LINKS"],), w_params["SPEED_LIMIT"])
         
@@ -45,7 +49,7 @@ class LinkageEnv(gym.Env):
         self.llength = 0.4
         self.lmass = 1
 
-        self.param_vals = [w_params["PARAM_VALS"][0], 0.4, 1, 0.4, 1, 0.4, 1, 0.4, 1, 0.4, 1]
+        self.param_vals = [w_params["PARAM_VALS"][0], 0.492011, 5.1294, 0.33171, 8.715, 0.467434, 45.733, 0.32, 6.8558, 0.32, 4.7891]
 
         self.gpos = None
         self.u = None
@@ -56,7 +60,20 @@ class LinkageEnv(gym.Env):
         self.state = np.random.uniform(low=self.low, high=self.high)
         self.gpos = np.random.uniform(low=self.low[:self.nlinks], high=self.high[:self.nlinks])
         self.cur_step = 0
+
+        self.hl = np.random.choice(2)
+        self.M_func = [self.M_func_nhl, self.M_func_hl][self.hl]
+        self.F_func = [self.F_func_nhl, self.F_func_hl][self.hl]
+        np.append(self.state, self.hl)
+        
         return self._get_obs()
+
+    def inference_reset(self, state, gpos):
+        self.state = state
+        self.gpos = gpos
+        self.cur_step = 0
+        return self._get_obs()
+
 
     def step(self, u):
         self.u = u * self.act_limit
@@ -75,10 +92,9 @@ class LinkageEnv(gym.Env):
         self.state[self.nlinks:] = np.clip(self.state[self.nlinks:], -self.speed_limit, self.speed_limit)
         self.cur_step += 1
 
-        pos_reward = -sum(abs(self.state[:self.nlinks] - self.gpos) ** 2 - abs(self.state[:self.nlinks] - self.gpos)) ** 2
+        pos_reward = -sum(abs(self.state[:self.nlinks] - self.gpos) ** 2) 
         speed_reward = -sum(abs(self.state[self.nlinks:] / 8))
         control_reward = -sum(abs(self.u / 100))
-        goal_reached = sum(abs(self.state[: self.nlinks] - self.gpos[: self.nlinks])) ** 2 < 0.1
         reward = 10*pos_reward
 
         if self.verbose:
@@ -94,7 +110,7 @@ class LinkageEnv(gym.Env):
         if self._is_out_of_bounds():
             reward = -5000
         
-        if goal_reached:
+        if self._goal_reached():
             reward += 100
 
         if terminate and self.verbose:
@@ -103,8 +119,58 @@ class LinkageEnv(gym.Env):
             print("*" * 50)
         return self._get_obs(), reward, terminate, {}
 
+    def inference_step(self, u):
+        self.u = u * self.act_limit
+        t = np.linspace(0, self.time_step, 2)
+        next_step = self.cur_step + 1
+        state0 = self.state
+
+        if self.verbose:
+            print("=" * 50 + "\n")
+            print(f"STEP = {self.cur_step}")
+            print(f"\t before state: {self.state}")
+            print(f"\t before trj: {self.coordinates[self.cur_step]}")
+            print(f"\t control = {u}")
+
+        self.state = odeint(self._rhs, state0, t, args=(self.param_vals,))[-1]
+        self.state[self.nlinks:] = np.clip(self.state[self.nlinks:], -self.speed_limit, self.speed_limit)
+        self.cur_step += 1
+
+        pos_reward = -sum(abs(self.state[:self.nlinks] - self.gpos) ** 2) 
+        speed_reward = -sum(abs(self.state[self.nlinks:] / 8))
+        control_reward = -sum(abs(self.u / 100))
+        reward = 10*pos_reward
+
+        if self.verbose:
+            print(f"\t after state = {self.state}")
+            print(f"\t after trj = {self.coordinates[next_step]}")
+            print(f"\t is_out_of_bounds = {is_out_of_bounds}")
+            print(f"\t reward = {reward}")
+            print("=" * 50 + "\n")
+
+        is_end = self.cur_step == 288
+
+        terminate = self._goal_reached()
+        if self._is_out_of_bounds():
+            reward = -5000
+        
+        if self._goal_reached():
+            reward += 100
+
+        if terminate and self.verbose:
+            print("*" * 50)
+            print("*****" + "TERMINATE" + "*****")
+            print("*" * 50)
+        return self._get_obs(), reward, terminate, {}
+
+
+
+
     def _is_out_of_bounds(self):
         return not self.observation_space.contains(self.state)
+
+    def _goal_reached(self):
+        return sum(abs(self.state[: self.nlinks] - self.gpos[: self.nlinks]) ** 2)  < 0.1
 
     def _normalize(self, vector, max):
         return np.array(
@@ -114,7 +180,7 @@ class LinkageEnv(gym.Env):
     def _get_obs(self):
         coords = self.state[:self.nlinks]
         speed = self.state[self.nlinks:]
-        return np.hstack((np.sin(coords), np.cos(coords), np.sin(self.gpos), np.cos(self.gpos), speed))
+        return np.hstack((np.sin(coords), np.cos(coords), np.sin(self.gpos), np.cos(self.gpos), speed, self.hl))
 
     def _rhs(self, x, t, args):
         arguments = np.hstack((x, self.u, args))

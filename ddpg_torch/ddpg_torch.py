@@ -196,6 +196,7 @@ class Agent(object):
         layer1_size=400,
         layer2_size=300,
         batch_size=64,
+        chkpt_dir = "/home/mans/Documents/ddpg"
     ):
         self.gamma = gamma
         self.tau = tau
@@ -209,6 +210,7 @@ class Agent(object):
             layer2_size,
             n_actions=n_actions,
             name="Actor",
+            chkpt_dir = chkpt_dir
         )
         self.target_actor = ActorNetwork(
             lr_actor,
@@ -217,6 +219,7 @@ class Agent(object):
             layer2_size,
             n_actions=n_actions,
             name="TargetActor",
+            chkpt_dir = chkpt_dir
         )
 
         self.critic = CriticNetwork(
@@ -226,6 +229,7 @@ class Agent(object):
             layer2_size,
             n_actions=n_actions,
             name="Critic",
+            chkpt_dir = chkpt_dir
         )
         self.target_critic = CriticNetwork(
             lr_critic,
@@ -234,6 +238,7 @@ class Agent(object):
             layer2_size,
             n_actions=n_actions,
             name="TargetCritic",
+            chkpt_dir = chkpt_dir
         )
 
         self.noise = OUActionNoise(mu=np.zeros(n_actions))
@@ -248,6 +253,12 @@ class Agent(object):
 
         self.actor.train()
         return mu_prime.cpu().detach().numpy()
+
+    def inference_action(self, observation):
+        self.actor.eval()
+        observation = T.tensor(observation, dtype=T.float).to(self.actor.device)
+        mu = self.actor(observation).to(self.actor.device)
+        return mu.cpu().detach().numpy()
 
     def remember(self, state, action, reward, new_state, done):
         self.memory.store_transition(state, action, reward, new_state, done)
